@@ -1,1 +1,51 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
 
+public class SpawnManager : MonoBehaviour
+{
+    public static List<ProjectileController> projectileList = new List<ProjectileController>(); //The instantiated projectiles. Both active and inactive.
+
+    [SerializeField]
+    private Transform projectilePrefab; //The template for all projectile prefabs
+
+    //The SpawnProjectile() function returns a ProjectileController for further customisation options. For example, adding status effect behaviour to the entity that the projectile hits.
+    //The function reuses projectile objects that are no longer active.
+    
+    public ProjectileController SpawnProjectile(Vector2 position, Quaternion rotation, Vector3 scale, AnimatorOverrideController animator, Vector2 movementSpeed, float duration, int damage, bool enemyProjectile, int elementIndex, string spawnSound, string endSound, bool bounce)
+    {
+        bool projectileFound = false;
+
+        //Check each projectile in the list until an inactive projectile is found. Once found, reset the projectile's properties to be the same as the passed in parameters.
+
+        foreach (ProjectileController projectile in projectileList)
+        {
+            if (!projectile.isActiveAndEnabled)
+            {
+                projectile.gameObject.SetActive(true);
+                projectile.transform.position = position;
+                projectile.GetComponent<Animator>().runtimeAnimatorController = animator;
+                projectile.ResetProjectile(movementSpeed, duration, damage, enemyProjectile, elementIndex, spawnSound, endSound, bounce);
+                projectile.transform.localScale = scale;
+                projectile.transform.rotation = rotation;
+                projectileFound = true;
+                return projectile;
+            }
+        }
+
+        //If a projectile is not found, instantiate a new projectile and assign the passed in parameters.
+        if (!projectileFound)
+        {
+            ProjectileController projectile = Instantiate(projectilePrefab.GetComponent<ProjectileController>(), position, Quaternion.identity);
+            projectile.GetComponent<Animator>().runtimeAnimatorController = animator;
+            projectile.transform.localScale = scale;
+            projectile.transform.rotation = rotation;
+            projectile.ResetProjectile(movementSpeed, duration, damage, enemyProjectile, elementIndex, spawnSound, endSound, bounce);
+            projectile.tag = "Projectile";
+            projectileList.Add(projectile);
+            return projectile;
+        }
+
+        return null;
+    }
+}
