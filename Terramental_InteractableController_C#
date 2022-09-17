@@ -1,0 +1,176 @@
+using UnityEngine;
+using Sirenix.OdinInspector;
+
+public class InteractableController : MonoBehaviour
+{
+    #region Variables & Properties
+
+    //The different types of interactable objects
+    private enum InteractableType { Dialogue, Checkpoint, Upgrade, Lance, Gem, NatureTrap, Pathway, Key, WeaponPickup, Cutscene, Portal, HealthPickup, WaterPuzzleActivator };
+
+    [SerializeField]
+    private InteractableType interactableType;
+
+    [SerializeField]
+    private bool isActive;
+
+    [InfoBox("Does the player need to interact with this object manually? (Example: Pressing E Key")]
+    [SerializeField]
+    private bool automaticInteraction;
+
+    [InfoBox("The number of times this object can be interacted with")]
+    [SerializeField]
+    private int interactCount;
+
+    [InfoBox("Can the player interact with this object infinetly? (Example: Portal)")]
+    [SerializeField]
+    private bool infiniteInteractions;
+
+    [SerializeField]
+    private float distanceThreshold = 1;
+
+    private PlayerController _playerController;
+
+    public bool IsActive
+    {
+        get { return isActive; }
+        set { isActive = value; }
+    }
+
+    public PlayerController Player
+    {
+        get { return _playerController; }
+    }
+
+    #endregion
+
+    #region Core
+
+    private void Start()
+    {
+        _playerController = GameManager.playerController;
+    }
+
+    private void Update()
+    {
+        if (interactableType == InteractableType.Portal)
+        {
+            this.GetComponent<Portal>().PortalUpdate();
+        }
+        float distance = Vector2.Distance(this.transform.position, _playerController.transform.position);
+
+        if (distance < distanceThreshold)
+        {
+            if (isActive)
+            {
+                if (automaticInteraction)
+                {
+                    Interact();
+                }
+                else
+                {
+                    InteractionManager.interactableController = this;
+                    GameManager.playerInterface.DisplayPrompt(true, 0, "E");
+                }
+
+                Debug.Log("COLLISION OCCURED");
+            }
+        }
+        else if (InteractionManager.interactableController == this)
+        {
+            if (isActive)
+            {
+                InteractionManager.interactableController = null;
+                GameManager.playerInterface.DisplayPrompt(false, 0, "");
+
+                Debug.Log("COLLISION ENDED");
+            }
+        }
+    }
+
+    #endregion
+
+    public void Interact()
+    {
+        //Depending on the type of object, activate the specific interact function in the script that inherits from InteractableController
+
+        if (isActive)
+        {
+            if (interactableType == InteractableType.Dialogue)
+            {
+                this.GetComponent<DialogueController>().DialogueInteract();
+            }
+
+            if (interactableType == InteractableType.Checkpoint)
+            {
+                this.GetComponent<LevelEndController>().CheckpointInteract();
+            }
+
+            if (interactableType == InteractableType.Upgrade)
+            {
+                this.GetComponent<UpgradeInteractable>().UpgradeInteract();
+                PlayerController.disablePlayer = true;
+            }
+
+            if (interactableType == InteractableType.Lance)
+            {
+                this.GetComponent<LanceProjectileController>().PickupLance();
+            }
+
+            if (interactableType == InteractableType.Gem)
+            {
+                this.GetComponent<GemController>().PickupGem();
+            }
+
+            if (interactableType == InteractableType.NatureTrap)
+            {
+                this.GetComponent<NatureTrap>().CollisionOccured();
+            }
+
+            if (interactableType == InteractableType.Pathway)
+            {
+                this.GetComponent<PathwayController>().InteractPathway();
+            }
+
+            if (interactableType == InteractableType.Key)
+            {
+                this.GetComponent<KeyController>().InteractKey();
+            }
+
+            if (interactableType == InteractableType.WeaponPickup)
+            {
+                this.GetComponent<WeaponPickup>().WeaponInteract();
+            }
+
+            if (interactableType == InteractableType.Cutscene)
+            {
+                this.GetComponent<CutsceneTrigger>().ActivateCutscene();
+            }
+
+            if (interactableType == InteractableType.HealthPickup)
+            {
+                this.GetComponent<HealthPickup>().HealthInteract();
+            }
+
+            if (interactableType == InteractableType.Portal)
+            {
+                this.GetComponent<Portal>().Teleport();
+            }
+
+            if(interactableType == InteractableType.WaterPuzzleActivator)
+            {
+                this.GetComponent<WaterPuzzleActivator>().ActivatePuzzle();
+            }
+
+            InteractionManager.interactableController = null;
+            GameManager.playerInterface.DisplayPrompt(false, 0, "");
+
+            if (interactCount == 0 && !infiniteInteractions)
+            {
+                IsActive = false;
+            }
+
+            interactCount--;
+        }
+    }
+}
