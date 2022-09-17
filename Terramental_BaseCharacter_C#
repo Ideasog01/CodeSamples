@@ -1,0 +1,425 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+//Inherited by PlayerController and EnemyController
+
+public class BaseCharacter : MonoBehaviour
+{
+    #region Variables
+
+    //The different status effect types
+    public enum StatusEffectType { None, Aflame, Frozen, Rooted, Stunned, Poisoned, Immune, Blinded, Weakened };
+
+    [SerializeField]
+    private float movementSpeed;
+
+    [SerializeField]
+    private int elementIndex;
+
+    [SerializeField]
+    private int characterMaxHealth;
+
+    [SerializeField]
+    private int characterHealth;
+
+    [SerializeField]
+    private LayerMask groundLayer;
+
+    private List<StatusEffect> _statusEffectList = new List<StatusEffect>();
+
+    private bool _isGrounded;
+
+    private bool _isImmune;
+
+    private float _jumpTimer;
+
+    private bool _disableMovement;
+
+    private Transform _groundCheck;
+
+    #endregion
+
+    #region Properties
+
+    public bool IsImmune
+    {
+        get { return _isImmune; }
+        set { _isImmune = value; }
+    }
+
+    public List<StatusEffect> ActiveStatusEffects
+    {
+        get { return _statusEffectList; }
+    }
+
+    public float MovementSpeed
+    {
+        get { return movementSpeed; }
+    }
+
+    public int ElementIndex
+    {
+        get { return elementIndex; }
+        set { elementIndex = value; }
+    }
+
+    public int CharacterHealth
+    {
+        get { return characterHealth; }
+        set { characterHealth = value; }
+    }
+
+    public int CharacterMaxHealth
+    {
+        get { return characterMaxHealth; }
+    }
+
+    public bool IsGrounded
+    {
+        get { return _isGrounded; }
+    }
+
+    public bool DisableMovement
+    {
+        get { return _disableMovement; }
+        set { _disableMovement = value; }
+    }
+
+    public float JumpTimer
+    {
+        get { return _jumpTimer; }
+        set { _jumpTimer = value; }
+    }
+
+    public Transform GroundCheck
+    {
+        get { return _groundCheck; }
+    }
+
+    #endregion
+
+    #region Core
+
+    public void AwakeBase()
+    {
+        _groundCheck = this.transform.GetChild(1);
+    }
+
+    public void UpdateBase()
+    {
+        Collider2D collider = Physics2D.OverlapCircle(_groundCheck.position, 0.12f, groundLayer);
+        _isGrounded = collider != null;
+    }
+
+    #endregion
+
+    #region Healing & Damage
+
+    public void Heal(int amount)
+    {
+        characterHealth += amount;
+
+        if(characterHealth > characterMaxHealth)
+        {
+            characterHealth = characterMaxHealth;
+        }
+    }
+
+    public void TakeDamage(int amount)
+    {
+        if(!_isImmune)
+        {
+            characterHealth -= amount;
+
+            if (this.CompareTag("Player"))
+            {
+                bool isWeakened = false;
+
+                foreach(StatusEffect effect in _statusEffectList)
+                {
+                    if(effect.StatusEffectType == StatusEffectType.Weakened)
+                    {
+                        isWeakened = true;
+                        break;
+                    }
+                }
+
+                if(isWeakened)
+                {
+                    characterHealth -= amount;
+                }
+
+                if (characterHealth <= 0)
+                {
+                    GameObject.Find("GameManager").GetComponent<GameManager>().PlayerDefeat();
+                }
+            }
+            else
+            {
+                this.GetComponent<EnemyController>().DisplayEnemyHealth();
+
+                if (characterHealth <= 0)
+                {
+                    this.GetComponent<EnemyController>().SpawnGem();
+                    this.gameObject.SetActive(false);
+                }
+            }
+        }
+    }
+
+    #endregion
+
+    #region StatusEffect
+
+    public void AddStatusEffect(StatusEffectType statusEffect, float duration, float damageTime, int damageAmount)
+    {
+        if(statusEffect == StatusEffectType.None)
+        {
+            return;
+        }
+
+        bool StatusEffectExists = false;
+
+        foreach (StatusEffect enemyStatusEffect in _statusEffectList)
+        {
+            if (statusEffect == enemyStatusEffect.StatusEffectType)
+            {
+                StatusEffectExists = true;
+                return;
+            }
+        }
+
+        if (!StatusEffectExists && CharacterHealth > 0)
+        {
+            StatusEffect newStatusEffect = new StatusEffect(statusEffect, duration, damageTime, damageAmount);
+            _statusEffectList.Add(newStatusEffect);
+            StartCoroutine(RemoveStatusEffectAfterTime(newStatusEffect));
+
+            if (statusEffect == StatusEffectType.Frozen)
+            {
+                DisableMovement = true;
+                Debug.Log("Character Frozen: OBJ = " + this.gameObject.name);
+            }
+            else if (statusEffect == StatusEffectType.Aflame)
+            {
+                //Spawn Flame Effect
+                Debug.Log("Character Set Aflame: OBJ = " + this.gameObject.name);
+            }
+            else if(statusEffect == StatusEffectType.Rooted)
+            {
+                DisableMovement = true;
+                Debug.Log("Character Rooted: OBJ = " + this.gameObject.name);
+            }
+            else if(statusEffect == StatusEffectType.Stunned)
+            {
+                DisableMovement = true;
+                Debug.Log("Character Stunned: OBJ = " + this.gameObject.name);
+            }
+            else if(statusEffect == StatusEffectType.Poisoned)
+            {
+                Debug.Log("Character Poisoned: OBJ = " + this.gameObject.name);
+            }
+            else if(statusEffect == StatusEffectType.Immune)
+            {
+                _isImmune = true;
+                Debug.Log("Character Immune: OBJ = " + this.gameObject.name);
+            }
+            else if(statusEffect == StatusEffectType.Blinded)
+            {
+                if(CompareTag("Player"))
+                {
+                    GameManager.playerInterface.ActivateBlindness(true);
+                    Debug.Log("Character Blinded: OBJ = " + this.gameObject.name);
+                }
+            }
+
+            if(this.CompareTag("Player"))
+            {
+                GameManager.playerInterface.DisplayStatusEffect(_statusEffectList.IndexOf(newStatusEffect), (int)statusEffect);
+            }
+            else if(this.CompareTag("Enemy"))
+            {
+                this.GetComponent<EnemyController>().DisplayStatusEffect(_statusEffectList.IndexOf(newStatusEffect), (int)statusEffect);
+            }
+
+            if (damageAmount > 0)
+            {
+                StartCoroutine(WaitForDamage(newStatusEffect));
+            }
+        }
+    }
+
+    private IEnumerator WaitForDamage(StatusEffect enemyStatusEffect)
+    {
+        yield return new WaitForSeconds(enemyStatusEffect.DamageTime);
+        if (_statusEffectList.Contains(enemyStatusEffect))
+        {
+            StartCoroutine(WaitForDamage(enemyStatusEffect));
+            TakeDamage(enemyStatusEffect.DamageAmount);
+            Debug.Log("PLAYER DAMAGED BY STATUS EFFECT");
+        }
+    }
+
+    private IEnumerator RemoveStatusEffectAfterTime(StatusEffect statusEffect)
+    {
+        yield return new WaitForSeconds(statusEffect.Duration); //Remove the status effect after the duration
+
+        if(!MovementIsDisabledByOtherEffect(statusEffect)) //Reenables movement if there are no other active status effects disabling movement.
+        {
+            DisableMovement = false;
+        }
+
+        if(statusEffect.StatusEffectType == StatusEffectType.Blinded)
+        {
+            if(CompareTag("Player"))
+            {
+                GameManager.playerInterface.ActivateBlindness(false);
+            }
+        }
+
+        if(statusEffect.StatusEffectType == StatusEffectType.Immune)
+        {
+            _isImmune = false;
+        }
+
+        _statusEffectList.Remove(statusEffect);
+    }
+
+    public bool MovementIsDisabledByOtherEffect(StatusEffect statusEffectToRemove)
+    {
+        bool effectFound = false;
+
+        foreach(StatusEffect effect in _statusEffectList)
+        {
+            if(effect.StatusEffectType == StatusEffectType.Frozen)
+            {
+                if(statusEffectToRemove.StatusEffectType == StatusEffectType.Rooted)
+                {
+                    effectFound = true;
+                }
+
+                if (statusEffectToRemove.StatusEffectType == StatusEffectType.Stunned)
+                {
+                    effectFound = true;
+                }
+            }
+            else if(effect.StatusEffectType == StatusEffectType.Rooted)
+            {
+                if (statusEffectToRemove.StatusEffectType == StatusEffectType.Frozen)
+                {
+                    effectFound = true;
+                }
+
+                if (statusEffectToRemove.StatusEffectType == StatusEffectType.Stunned)
+                {
+                    effectFound = true;
+                }
+            }
+            else if(effect.StatusEffectType == StatusEffectType.Stunned)
+            {
+                if(statusEffectToRemove.StatusEffectType == StatusEffectType.Rooted)
+                {
+                    effectFound = true;
+                }
+
+                if (statusEffectToRemove.StatusEffectType == StatusEffectType.Frozen)
+                {
+                    effectFound = true;
+                }
+            }
+        }
+
+        return effectFound;
+    }
+
+    public struct StatusEffect
+    {
+        private StatusEffectType statusEffectType;
+
+        //THe effect duration
+        private float _duration;
+
+        //The wait time to apply damage
+        private float _damageTime;
+
+        //The amount of damage to apply
+        private int _damageAmount;
+
+        public StatusEffect(StatusEffectType StatusEffect, float duration, float damageTime, int damageAmount)
+        {
+            statusEffectType = StatusEffect;
+            _duration = duration;
+            _damageTime = damageTime;
+            _damageAmount = damageAmount;
+        }
+
+        public StatusEffectType StatusEffectType
+        {
+            get { return statusEffectType; }
+            set { statusEffectType = value; }
+        }
+
+        public float Duration
+        {
+            get { return _duration; }
+            set { _duration = value; }
+        }
+
+        public float DamageTime
+        {
+            get { return _damageTime; }
+            set { _damageTime = value; }
+        }
+
+        public int DamageAmount
+        {
+            get { return _damageAmount; }
+            set { _damageAmount = value; }
+        }
+    }
+
+    #endregion
+
+    #region Elements
+
+    public void ChangeElement(int newElementIndex)
+    {
+        ElementIndex = newElementIndex;
+
+        if(this.CompareTag("Player"))
+        {
+            this.GetComponent<PlayerController>().playerAnimator.SetInteger("elementIndex", ElementIndex);
+            this.GetComponent<PlayerController>().DisplayPlayerWeapon();
+        }
+    }
+
+    //Used by the player to cycle through each element using input
+    public void IncrementElementIndex(int increase)
+    {
+        if(increase > 0)
+        {
+            if(ElementIndex == 2)
+            {
+                ChangeElement(0);
+            }
+            else
+            {
+                ChangeElement(ElementIndex + 1);
+            }
+        }
+        else
+        {
+            if(ElementIndex == 0)
+            {
+                ChangeElement(2);
+            }
+            else
+            {
+                ChangeElement(ElementIndex - 1);
+            }
+        }
+    }
+
+    #endregion
+}
