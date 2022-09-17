@@ -1,0 +1,245 @@
+using UnityEngine;
+using Sirenix.OdinInspector;
+
+public class ProjectileController : MonoBehaviour
+{
+    #region Variables & Properties
+
+    [InfoBox("Only use Y Coordinate for non tracking projectiles")]
+    [SerializeField]
+    private Vector2 projectileMovementSpeed;
+
+    [SerializeField]
+    private Transform projectileTarget; //Only assign this variable for the projectile to track objects
+
+    [SerializeField]
+    private float projectileDuration;
+
+    [SerializeField]
+    private int projectileDamage;
+
+    [SerializeField]
+    private bool isEnemyProjectile;
+
+    [SerializeField]
+    private int elementIndex;
+
+    [SerializeField]
+    private string spawnSound;
+
+    [SerializeField]
+    private string endSound;
+
+    [SerializeField]
+    private bool projectileBounces;
+
+    private Rigidbody2D _projectileRb;
+
+    private BaseCharacter.StatusEffect _statusEffect;
+
+    private bool _statusEffectSet;
+
+    public bool IsEnemyProjectile
+    {
+        get { return isEnemyProjectile; }
+    }
+
+    #endregion
+
+    #region Projectile Settings
+
+    //Tracking projectiles
+    public void ResetProjectile(Vector2 movementSpeed, Transform target, float duration, int damage, bool enemyProjectile, int elementIndex, string spawnSound, string endSound, bool bounce)
+    {
+        projectileMovementSpeed = movementSpeed;
+        projectileTarget = target;
+        projectileDuration = duration;
+        projectileDamage = damage;
+        isEnemyProjectile = enemyProjectile;
+        this.elementIndex = elementIndex;
+        this.spawnSound = spawnSound;
+        this.endSound = endSound;
+        projectileBounces = bounce;
+        _statusEffectSet = false;
+
+        GameManager.audioManager.PlaySound(spawnSound, this.transform.position);
+    }
+
+    //Linear movement projectiles
+    public virtual void ResetProjectile(Vector2 movementSpeed, float duration, int damage, bool enemyProjectile, int elementIndex, string spawnSound, string endSound, bool bounce)
+    {
+        projectileMovementSpeed = movementSpeed;
+        projectileTarget = null;
+        projectileDuration = duration;
+        projectileDamage = damage;
+        isEnemyProjectile = enemyProjectile;
+        this.elementIndex = elementIndex;
+        this.spawnSound = spawnSound;
+        this.endSound = endSound;
+        projectileBounces = bounce;
+        _statusEffectSet = false;
+
+        GameManager.audioManager.PlaySound(spawnSound, this.transform.position);
+    }
+
+    public void AddStatusEffect(BaseCharacter.StatusEffectType statusEffect, float duration, float damageTime, int damageAmount)
+    {
+        _statusEffect = new BaseCharacter.StatusEffect();
+        _statusEffect.StatusEffectType = statusEffect;
+        _statusEffect.Duration = duration;
+        _statusEffect.DamageTime = damageTime;
+        _statusEffect.DamageAmount = damageAmount;
+        _statusEffectSet = true;
+    }
+
+    #endregion
+
+    #region Core
+
+    private void Awake()
+    {
+        _projectileRb = this.GetComponent<Rigidbody2D>();
+    }
+
+    private void FixedUpdate()
+    {
+        if (projectileTarget != null) //If a target has been specified, move towards the target's position
+        {
+            Vector2 position = Vector2.MoveTowards(this.transform.position, projectileTarget.position, Time.deltaTime * projectileMovementSpeed.x);
+            _projectileRb.MovePosition(position);
+        }
+        else //If a target has NOT been specified, move according to the set projectileMovementSpeed Vector2 variable
+        {
+            Vector3 position = new Vector3(projectileMovementSpeed.x, projectileMovementSpeed.y, 0) * Time.deltaTime;
+            _projectileRb.MovePosition(this.transform.position + position);
+        }
+
+        if (projectileDuration > 0)
+        {
+            projectileDuration -= 1 * Time.deltaTime;
+        }
+        else
+        {
+            gameObject.SetActive(false);
+        }
+    }
+
+    #endregion
+
+    private void OnCollisionEnter2D(Collision2D collision)
+    {
+        if(collision.gameObject.CompareTag("Projectile"))
+        {
+            Physics2D.IgnoreCollision(this.GetComponent<CircleCollider2D>(), collision.collider, true);
+            return;
+        }
+
+        if (isEnemyProjectile)
+        {
+            if (collision.gameObject.CompareTag("Enemy"))
+            {
+                Physics2D.IgnoreCollision(this.GetComponent<CircleCollider2D>(), collision.collider);
+            }
+
+            if (collision.gameObject.CompareTag("Player"))
+            {
+                GameManager.audioManager.PlaySound(endSound, this.transform.position);
+                collision.gameObject.GetComponent<PlayerController>().TakeDamage(projectileDamage);
+
+                if(_statusEffectSet)
+                {
+                    collision.gameObject.GetComponent<PlayerController>().AddStatusEffect(_statusEffect.StatusEffectType, _statusEffect.Duration, _statusEffect.DamageTime, _statusEffect.DamageAmount);
+                    Debug.Log("STATUS EFFECT ADDED TO ENEMY");
+                }
+
+                if (!projectileBounces)
+                {
+                    gameObject.SetActive(false);
+                }
+            }
+        }
+        else
+        {
+            if(collision.gameObject.CompareTag("Player"))
+            {
+                Physics2D.IgnoreCollision(this.GetComponent<CircleCollider2D>(), collision.collider);
+            }
+
+            if (collision.gameObject.CompareTag("Enemy"))
+            {
+                BaseCharacter character = collision.gameObject.GetComponent<BaseCharacter>();
+
+                if (elementIndex == 0)
+                {
+                    if (character.ElementIndex == 0 || character.ElementIndex == 1)
+                    {
+                        if (!projectileBounces)
+                        {
+                            gameObject.SetActive(false);
+                        }
+
+                        return;
+                    }
+                }
+                else if (elementIndex == 1)
+                {
+                    if (character.ElementIndex == 2 || character.ElementIndex == 1)
+                    {
+                        if (!projectileBounces)
+                        {
+                            gameObject.SetActive(false);
+                        }
+
+                        return;
+                    }
+                }
+                else if (elementIndex == 2)
+                {
+                    if (character.ElementIndex == 2 || character.ElementIndex == 0)
+                    {
+                        if (!projectileBounces)
+                        {
+                            gameObject.SetActive(false);
+                        }
+
+                        return;
+                    }
+                }
+
+                character.TakeDamage(projectileDamage);
+
+                if(_statusEffectSet)
+                {
+                    character.AddStatusEffect(_statusEffect.StatusEffectType, _statusEffect.Duration, _statusEffect.DamageTime, _statusEffect.DamageAmount);
+                }
+
+                gameObject.SetActive(false);
+            }
+        }
+
+        if (collision.gameObject.CompareTag("Platform") || collision.gameObject.CompareTag("ElementWall"))
+        {
+            if (elementIndex < 3 && !projectileBounces)
+            {
+                GameManager.spawnManager.SpawnVFX((SpawnManager.VFXType)elementIndex, this.transform.position);
+            }
+
+            GameManager.audioManager.PlaySound(endSound, this.transform.position);
+
+            if (!projectileBounces)
+            {
+                gameObject.SetActive(false);
+            }
+        }
+
+        if (projectileBounces && !collision.gameObject.CompareTag("Player") && !collision.gameObject.CompareTag("ProjectileIgnore"))
+        {
+            var speed = Mathf.Abs(projectileMovementSpeed.x);
+            var direction = Vector2.Reflect(projectileMovementSpeed.normalized, collision.contacts[0].normal);
+
+            projectileMovementSpeed = direction * Mathf.Max(speed, 0f);
+
+            Debug.Log("BOUNCE!");
+        }
+    }
+}
