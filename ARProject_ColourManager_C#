@@ -1,0 +1,59 @@
+using UnityEngine;
+
+//Ground Plane AR Script
+//Allows the player to apply different colours materials to the character model
+public class ColourManager : MonoBehaviour
+{
+    private Camera _mainCam;
+
+    //The colour that has been selected by the player through touch/mouse interaction
+    private RotateColour _selectedColour;
+
+    private void Awake()
+    {
+        _mainCam = Camera.main;
+    }
+
+    private void Update()
+    {
+        if(Input.GetMouseButtonDown(0) && _selectedColour == null)
+        {
+            CheckColourInteraction();
+        }
+
+        //If a colour has previously been selected and the player's point of input is over the character model, apply the selected material.
+        if(_selectedColour != null)
+        {
+            if(Input.GetMouseButtonUp(0))
+            {
+                RaycastHit hit;
+                if(Physics.Raycast(_mainCam.ScreenPointToRay(Input.mousePosition), out hit))
+                {
+                    if(hit.collider.CompareTag("ARTarget"))
+                    {
+                        hit.collider.gameObject.transform.GetChild(1).GetComponent<SkinnedMeshRenderer>().material = _selectedColour.GetComponent<MeshRenderer>().material;
+                    }
+                }
+
+                _selectedColour.ActivateRotation(false);
+                _selectedColour = null;
+            }
+        }
+    }
+
+    public void CheckColourInteraction()
+    {
+        RaycastHit hit;
+
+        if(Physics.Raycast(_mainCam.ScreenPointToRay(Input.mousePosition), out hit))
+        {
+            if(hit.collider.gameObject.CompareTag("Colour"))
+            {
+                hit.collider.gameObject.GetComponent<RotateColour>().ActivateRotation(true);
+                _selectedColour = hit.collider.gameObject.GetComponent<RotateColour>();
+            }
+        }
+
+        //If the input point is over a colour cube, select the colour. Perform a rotation behaviour to visually communicate that the colour is selected.
+    }
+}
