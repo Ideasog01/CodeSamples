@@ -1,0 +1,151 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using Vuforia;
+using UnityEngine.Animations.Rigging;
+
+//The Robot Script
+public class PlayerController : MonoBehaviour
+{
+    //The list of spawned projectiles
+    public static List<ProjectileTarget> projectileTargets = new List<ProjectileTarget>();
+
+    [SerializeField]
+    private VirtualButtonBehaviour shootVirtualButton;
+
+    //Allows the head of the robot to face a seperate target to the current animation being played
+    [SerializeField]
+    private MultiAimConstraint headConstraint;
+
+    [SerializeField]
+    private UnityEngine.UI.Image buttonOverlay;
+
+    [SerializeField]
+    private Color defaultButtonColor;
+
+    [SerializeField]
+    private Color selectedButtonColor;
+
+    [Header("Projectile Settings")]
+    [SerializeField]
+    private Transform projectilePrefab;
+
+    //Where the projectile spawns when the virtual button is activated
+    [SerializeField]
+    private Transform projectileOrigin;
+
+    [SerializeField]
+    private Transform projectileRotation;
+
+    [SerializeField]
+    private float projectileSpeed;
+
+    [SerializeField]
+    private float projectileDuration;
+
+    private Animator _playerAnim;
+    private ProjectileManager _projectileManager;
+    private int _targetIndex;
+    private ProjectileTarget _currentTarget;
+
+
+    //Activated through Animation Event
+    public void FireProjectile()
+    {
+        if(_currentTarget != null)
+        {
+            _projectileManager.SpawnProjectile(projectileOrigin, projectileRotation, projectileSpeed, projectileDuration, _currentTarget);
+        }
+    }
+
+    public void TargetDestroyed()
+    {
+        headConstraint.data.sourceObjects.RemoveAt(0);
+        headConstraint.weight = 0;
+        _currentTarget = null;
+        _playerAnim.Play("Robot_Celebrate");
+    }
+
+    public void SetTarget(ProjectileTarget target)
+    {
+        _currentTarget = target;
+
+        headConstraint.data.sourceObjects.RemoveAt(0);
+        WeightedTransform transform = new WeightedTransform(_currentTarget.transform, 1);
+        headConstraint.data.sourceObjects.Add(transform);
+        headConstraint.weight = 1;
+    }
+
+
+    public void VirtualBtnPressed(VirtualButtonBehaviour vb)
+    {
+        buttonOverlay.color = selectedButtonColor;
+    }
+
+    public void VirtualBtnReleased(VirtualButtonBehaviour vb)
+    {
+        buttonOverlay.color = defaultButtonColor;
+    }
+
+    private void Awake()
+    {
+        _playerAnim = this.GetComponent<Animator>();
+        _projectileManager = GameObject.Find("GameManager").GetComponent<ProjectileManager>();
+        shootVirtualButton.RegisterOnButtonPressed(ActivateFire);
+        shootVirtualButton.RegisterOnButtonPressed(VirtualBtnPressed);
+        shootVirtualButton.RegisterOnButtonReleased(VirtualBtnReleased);
+        headConstraint.weight = 0;
+    }
+
+    private void ActivateFire(VirtualButtonBehaviour vb)
+    {
+        if(_currentTarget != null)
+        {
+            Vector3 dir = (_currentTarget.transform.position - this.transform.position).normalized;
+            float dot = Vector3.Dot(dir, transform.forward);
+
+            if(dot < 0.5f)
+            {
+                Debug.Log("Not Facing Target");
+                _playerAnim.Play("Robot_No");
+                headConstraint.weight = 0;
+                _currentTarget = null;
+            }
+            else
+            {
+                _playerAnim.Play("Robot_Shoot");
+                _playerAnim.SetBool("triggerIdle2", false);
+                headConstraint.weight = 1;
+            }
+        }
+        else
+        {
+            _playerAnim.Play("Robot_No");
+        }
+
+        FindTarget(vb);
+
+        Debug.Log("Robot Shoot Activated");
+    }
+
+    private void FindTarget(VirtualButtonBehaviour vb)
+    {
+        _targetIndex++;
+
+        if(_targetIndex >= projectileTargets.Count)
+        {
+            _targetIndex = 0;
+        }
+
+        if(projectileTargets[_targetIndex] != null)
+        {
+            _currentTarget = projectileTargets[_targetIndex];
+
+            //Sets the rotation of the Robot's head to face the target
+            headConstraint.data.sourceObjects.RemoveAt(0);
+            WeightedTransform transform = new WeightedTransform(_currentTarget.transform, 1);
+            headConstraint.data.sourceObjects.Add(transform);
+            headConstraint.weight = 1;
+        }
+    }
+}
