@@ -1,0 +1,405 @@
+using System.Collections;
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+
+public class PlayerCasting : MonoBehaviour
+{
+    public int currentSpellIndex;
+
+    public bool disableCasting;
+
+    public Spell ability1;
+
+    public Spell ability2;
+
+    public Spell ability3;
+
+    public Sprite ability1ButtonIcon;
+
+    public Sprite ability2ButtonIcon;
+
+    public Sprite ability3ButtonIcon;
+
+    [SerializeField]
+    private Sprite defaultIcon;
+
+    [SerializeField]
+    private Camera playerCam;
+
+    [SerializeField]
+    private PlayerProperties playerProperties;
+
+    [SerializeField]
+    private ResourceManager resourceManager;
+
+    [SerializeField]
+    private Animator playerAnim;
+
+    [SerializeField]
+    private Light mageLight;
+
+    [SerializeField]
+    private Material playerStaffMaterial;
+
+    [SerializeField]
+    private Color defaultMageLightColor;
+
+    [SerializeField]
+    private ParticleSystem[] spellMenuArray;
+
+    [SerializeField]
+    private GameObject playerModel;
+
+    [SerializeField]
+    private GameObject falconModel;
+
+    [SerializeField]
+    private TextMeshProUGUI spellNameText;
+
+    [SerializeField]
+    private TextMeshProUGUI spellDescriptionText;
+
+    [SerializeField]
+    private GameObject targetUI;
+
+    [SerializeField]
+    private TextMeshProUGUI ability1Text;
+
+    [SerializeField]
+    private TextMeshProUGUI ability2Text;
+
+    [SerializeField]
+    private TextMeshProUGUI ability3Text;
+
+    [SerializeField]
+    private Image icon1;
+
+    [SerializeField]
+    private Image icon2;
+
+    [SerializeField]
+    private Image icon3;
+
+    [SerializeField]
+    private Material selectColor;
+
+    private Interactable _focus;
+
+    private SpellManager _spellManager;
+
+    private PlayerMovement _playerMovement;
+
+    private bool _isCasting;
+
+    private bool _isTargetActive;
+
+    private float _ability1Timer;
+
+    private float _ability2Timer;
+
+    private float _ability3Timer;
+
+    private DialogueManager _dialogueManager;
+
+    private void Awake()
+    {
+        _dialogueManager = GameObject.Find("GameManager").GetComponent<DialogueManager>();
+    }
+
+    private void Update()
+    {
+        if(_ability1Timer > 0)
+        {
+            _ability1Timer -= Time.deltaTime * 1;
+            ability1Text.text = _ability1Timer.ToString("F0");
+            icon1.sprite = defaultIcon;
+        }
+        else
+        {
+            icon1.sprite = ability1ButtonIcon;
+            ability1Text.text = "";
+        }
+
+        if(_ability2Timer > 0)
+        {
+            _ability2Timer -= Time.deltaTime * 1;
+            ability2Text.text = _ability2Timer.ToString("F0");
+            icon2.sprite = defaultIcon;
+        }
+        else
+        {
+            icon2.sprite = ability2ButtonIcon;
+            ability2Text.text = "";
+        }
+
+        if (_ability3Timer > 0)
+        {
+            _ability3Timer -= Time.deltaTime * 1;
+            ability3Text.text = _ability3Timer.ToString("F0");
+            icon3.sprite = defaultIcon;
+        }
+        else
+        {
+            icon3.sprite = ability3ButtonIcon;
+            ability3Text.text = "";
+        }
+    }
+
+    public void AimTarget(Vector2 mousePosition)
+    {
+        float screenWidth = Screen.width;
+        float screenHeight = Screen.height;
+
+        if(mousePosition.x > 0 && targetUI.transform.position.x < screenWidth)
+        {
+            targetUI.transform.position += new Vector3(mousePosition.x, 0);
+        }
+        else if(mousePosition.x < 0 && targetUI.transform.position.x > 0)
+        {
+            targetUI.transform.position += new Vector3(mousePosition.x, 0);
+        }
+
+        if (mousePosition.y > 0 && targetUI.transform.position.y < screenHeight)
+        {
+            targetUI.transform.position += new Vector3(0, mousePosition.y);
+        }
+        else if (mousePosition.y < 0 && targetUI.transform.position.y > 0)
+        {
+            targetUI.transform.position += new Vector3(0, mousePosition.y);
+        }
+
+        RaycastHit hit;
+        if (Physics.Raycast(playerCam.ScreenPointToRay(targetUI.transform.position), out hit, 100))
+        {
+            if (hit.collider.gameObject.tag == "Interactable")
+            {
+                targetUI.GetComponent<Image>().color = Color.cyan;
+            }
+            
+            if(hit.collider.gameObject.tag == "Puzzle")
+            {
+                targetUI.GetComponent<Image>().color = Color.magenta;
+                GameObject.Find("GameManager").GetComponent<GameManager>().ShowMessage("USE PRIMARY ATTACK TO INTERACT WITH PUZZLE", 5);
+
+            }
+
+            if(hit.collider.gameObject.tag == "Statue")
+            {
+                targetUI.GetComponent<Image>().color = Color.yellow;
+                GameObject.Find("GameManager").GetComponent<GameManager>().ShowMessage("USE PRIMARY ATTACK TO INTERACT WITH STATUE", 5);
+            }
+
+            if (hit.collider.gameObject.tag != "Puzzle" && hit.collider.gameObject.tag != "Interactable" && hit.collider.gameObject.tag != "Statue")
+            {
+                targetUI.GetComponent<Image>().color = Color.white;
+            }
+        }
+    }
+
+    public void FindFocus()
+    {
+        if(targetUI.activeSelf)
+        {
+            RaycastHit hit;
+            if (Physics.Raycast(playerCam.ScreenPointToRay(targetUI.transform.position), out hit, 100))
+            {
+                if (hit.collider.gameObject.tag == "Interactable")
+                {
+                    _focus = hit.collider.gameObject.GetComponent<Interactable>();
+                    GameObject.Find("AudioManager").GetComponent<AudioManager>().PlayAudio(playerModel, true, "mysteriousVoices");
+                    Debug.Log(_focus);
+                }
+
+                if (hit.collider.gameObject.tag == "Puzzle")
+                {
+                    hit.collider.gameObject.transform.parent.transform.parent.gameObject.GetComponent<RunePuzzle>().Puzzle(hit.collider.gameObject);
+                    GameObject.Find("AudioManager").GetComponent<AudioManager>().PlayAudio(playerModel, true, "mysteriousVoices");
+                }
+
+                if (hit.collider.gameObject.tag == "Dimension")
+                {
+                    hit.collider.gameObject.GetComponent<Dimension>().RiftInteraction();
+                }
+
+                if (hit.collider.gameObject.tag == "Statue")
+                {
+                    hit.collider.gameObject.GetComponent<Statue>().Rotate();
+                    GameObject.Find("AudioManager").GetComponent<AudioManager>().PlayAudio(playerModel, true, "mysteriousVoices");
+                }
+            }
+        }
+        
+    }
+
+    public void Ability1()
+    {
+        if(playerProperties.playerEnergy <= 0)
+        {
+            GameObject.Find("GameManager").GetComponent<GameManager>().ShowMessage("NOT ENOUGH ENERGY TO CAST SPELLS", 2);
+        }
+
+        if(!disableCasting && playerProperties.playerEnergy > 0 && playerProperties.playerFear < 75)
+        {
+            if (_dialogueManager.isDialogueActive)
+            {
+                GameObject.Find("ResponseManager").GetComponent<ResponseManager>().OptionA();
+            }
+            else
+            {
+                if (!_isCasting && ability1 != null && _ability1Timer <= 0)
+                {
+                    CastSpell(ability1);
+                }
+            }
+        }   
+    }
+
+    public void Ability2()
+    {
+        if(playerProperties.playerEnergy <= 0)
+        {
+            GameObject.Find("GameManager").GetComponent<GameManager>().ShowMessage("NOT ENOUGH ENERGY TO CAST SPELLS", 2);
+        }
+
+        if(!disableCasting && playerProperties.playerEnergy > 0 && playerProperties.playerFear < 75)
+        {
+            if (_dialogueManager.isDialogueActive)
+            {
+                GameObject.Find("ResponseManager").GetComponent<ResponseManager>().OptionB();
+            }
+            else
+            {
+                if (!_isCasting && ability2 != null && _ability2Timer <= 0)
+                {
+                    CastSpell(ability2);
+                }
+            }
+        }
+    }
+
+    public void Ability3()
+    {
+        if(playerProperties.playerEnergy <= 0)
+        {
+            GameObject.Find("GameManager").GetComponent<GameManager>().ShowMessage("NOT ENOUGH ENERGY TO CAST SPELLS", 2);
+        }
+
+        if(!disableCasting && playerProperties.playerEnergy > 0 && playerProperties.playerFear < 75)
+        {
+            if (_dialogueManager.isDialogueActive)
+            {
+                GameObject.Find("ResponseManager").GetComponent<ResponseManager>().OptionC();
+            }
+            else
+            {
+                if (!_isCasting && ability3 != null && _ability3Timer <= 0)
+                {
+                    CastSpell(ability3);
+                }
+            }
+        }
+        else
+        {
+            if(falconModel.activeSelf)
+            {
+                falconModel.GetComponent<FalconMovement>().TransformBack();
+            }
+        }
+    }
+
+    public void ShowTarget()
+    {
+        if(_isTargetActive)
+        {
+            targetUI.SetActive(false);
+            _isTargetActive = false;
+        }
+        else
+        {
+            targetUI.SetActive(true);
+            _isTargetActive = true;
+        }
+    }
+
+    private void ActivateSpell(Spell spell)
+    {
+        _spellManager.GetComponent<SpellManager>().CastSpell(spell, _focus);
+
+        playerAnim.Play("Casting_Anim");
+        playerAnim.speed = (2 / spell.spellCastTime);
+        playerProperties.playerEnergy -= spell.spellEnergyCost;
+
+        StartCoroutine(WaitToCastSpell(spell));
+    }
+
+    IEnumerator WaitToCastSpell(Spell spell)
+    {
+        disableCasting = true;
+        if(spell.disableMovement)
+        {
+            _playerMovement.disableMovement = true;
+        }
+        _isCasting = true;
+        mageLight.intensity *= 10;
+        mageLight.color = spell.spellColor;
+        playerStaffMaterial.color = spell.spellColor;
+        yield return new WaitForSeconds(spell.spellCastTime);
+
+        if(spell == ability1)
+        {
+            _ability1Timer = ability1.spellCooldown;
+        }
+
+        if(spell == ability2)
+        {
+            _ability2Timer = ability2.spellCooldown;
+        }
+
+        if (spell == ability3)
+        {
+            _ability3Timer = ability3.spellCooldown;
+        }
+
+        mageLight.color = defaultMageLightColor;
+        playerStaffMaterial.color = defaultMageLightColor;
+        mageLight.intensity /= 10;
+
+        playerAnim.speed = 1;
+
+        yield return new WaitForSeconds(1);
+        if(spell.disableMovement)
+        {
+            _playerMovement.disableMovement = false;
+        }
+        _isCasting = false;
+        disableCasting = false;
+
+    }
+
+    public void DisplaySpellInfo(int index)
+    {
+        currentSpellIndex = index;
+    }
+
+    private void Start()
+    {
+        _spellManager = GameObject.Find("SpellManager").GetComponent<SpellManager>();
+        _playerMovement = GameObject.Find("PlayerObject").GetComponent<PlayerMovement>();
+    }
+
+    private void CastSpell(Spell spell)
+    {
+        if(spell.requiresFocus)
+        {
+            if(_focus != null)
+            {
+                ActivateSpell(spell);
+            }
+        }
+        else
+        {
+            ActivateSpell(spell);
+        }
+    }
+}
