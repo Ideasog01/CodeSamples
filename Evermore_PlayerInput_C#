@@ -1,0 +1,280 @@
+using UnityEngine;
+using UnityEngine.InputSystem;
+using TMPro;
+using UnityEngine.SceneManagement;
+
+public class PlayerInput : MonoBehaviour
+{
+    public static bool usingXboxController;
+
+    public static bool usingPS4Controller;
+
+    public PlayerControls _controls;
+
+    public Sprite[] xboxControls;
+
+    public Sprite[] pS4Controls;
+
+    public Sprite[] pcControls;
+
+    [SerializeField]
+    private InventoryManager inventoryManager;
+
+    [SerializeField]
+    private PlayerCasting playerCasting;
+
+    [SerializeField]
+    private PlayerProperties playerProperties;
+
+    [SerializeField]
+    private PlayerMovement playerMovement;
+
+    [SerializeField]
+    private QuestLogManager questLogManager;
+
+    [SerializeField]
+    private Animator quickbarAnim;
+
+    [SerializeField]
+    private CameraController cameraController;
+
+    [SerializeField]
+    private SpellManager spellManager;
+
+    [SerializeField]
+    private DialogueManager dialogueManager;
+
+    [SerializeField]
+    private GameManager gameManager;
+
+    [SerializeField]
+    private TextMeshProUGUI promptText;
+
+    private float _moveX;
+
+    private float _moveY;
+
+    public float _lookX;
+
+    public float _lookY;
+
+    private bool _isLookActive;
+
+    private bool _isTargetActive;
+
+    private bool _beamActive;
+
+    private GameManager _gameManager;
+
+    private QuestManager _questManager;
+
+    private Vector2 mouseLook;
+
+
+
+    private void Awake()
+    {
+        _gameManager = GameObject.Find("GameManager").GetComponent<GameManager>();
+        _questManager = GameObject.Find("GameManager").GetComponent<QuestManager>();
+
+        _controls = new PlayerControls();
+        _controls.Gameplay.Jump.performed += ctx => playerMovement.Jump();
+
+        _controls.Gameplay.Jump.performed += ctx => _questManager.Continue();
+        _controls.Gameplay.Jump.performed += ctx => _gameManager.CloseMissingItems();
+
+        _controls.Gameplay.Fall.performed += ctx => playerMovement.Fall();
+
+        _controls.Gameplay.Fall.canceled += ctx => playerMovement.YMovementCancelled();
+
+        _controls.Gameplay.Jump.canceled += ctx => playerMovement.YMovementCancelled();
+
+        _controls.Gameplay.Vertical.performed += ctx => _moveX = ctx.ReadValue<float>();
+        _controls.Gameplay.Vertical.canceled += ctx => _moveX = 0;
+
+        _controls.Gameplay.Horizontal.performed += ctx => _moveY = ctx.ReadValue<float>();
+        _controls.Gameplay.Horizontal.canceled += ctx => _moveY = 0;
+
+        _controls.Gameplay.MouseLook.performed += ctx => mouseLook = ctx.ReadValue<Vector2>();
+        _controls.Gameplay.MouseLook.canceled += ctx => mouseLook = new Vector2(0, 0);
+
+        _controls.Gameplay.LookY.performed += ctx => _lookY = ctx.ReadValue<float>();
+        _controls.Gameplay.LookY.canceled += ctx => _lookY = 0;
+
+        _controls.Gameplay.ActivateLook.performed += ctx => LookInput();
+        _controls.Gameplay.ActivateLook.canceled += ctx => LookInput();
+
+        _controls.Gameplay.Inventory.performed += ctx => inventoryManager.InventoryInteraction();
+
+        _controls.Gameplay.Ability1.performed += ctx => playerCasting.Ability1();
+        _controls.Gameplay.Ability2.performed += ctx => playerCasting.Ability2();
+        _controls.Gameplay.Ability3.performed += ctx => playerCasting.Ability3();
+
+        _controls.Gameplay.Ability3.performed += ctx => _beamActive = true;
+        _controls.Gameplay.Ability3.canceled += ctx => _beamActive = false;
+        _controls.Gameplay.Ability3.canceled += ctx => spellManager.DestroySpellAbility3Obj();
+
+        _controls.Gameplay.Ability3.performed += ctx => inventoryManager.RemoveSelectedItem();
+        _controls.Gameplay.Ability1.performed += ctx => inventoryManager.UseSelectedItem();
+
+        _controls.Gameplay.Cast.performed += ctx => _isTargetActive = true;
+        _controls.Gameplay.Cast.performed += ctx => playerCasting.ShowTarget();
+
+        _controls.Gameplay.Cast.canceled += ctx => _isTargetActive = false;
+        _controls.Gameplay.Cast.canceled += ctx => playerCasting.ShowTarget();
+        _controls.Gameplay.Cast.canceled += ctx => IsLook();
+
+        _controls.Gameplay.Interact.performed += ctx => dialogueManager.ActivateDialogue();
+        _controls.Gameplay.Interact.performed += ctx => _gameManager.DoorInteraction();
+        _controls.Gameplay.Interact.performed += ctx => _gameManager.MonumentInteraction();
+        _controls.Gameplay.Interact.performed += ctx => _gameManager.ConvertEnergy();
+        _controls.Gameplay.Interact.performed += ctx => _gameManager.LockInteraction();
+        _controls.Gameplay.Interact.performed += ctx => _gameManager.PickupInteraction();
+        _controls.Gameplay.Interact.performed += ctx => inventoryManager.ItemSelect();
+        _controls.Gameplay.Interact.performed += ctx => _gameManager.PortalInteraction();
+        _controls.Gameplay.Interact.performed += ctx => _gameManager.BuildableInteraction();
+        _controls.Gameplay.Interact.performed += ctx => _gameManager.TradingNPCInteraction();
+
+        _controls.Gameplay.Attack.performed += ctx => spellManager.QuickAttack();
+        _controls.Gameplay.Attack.performed += ctx => Cursor.visible = false;
+
+        _controls.Gameplay.Attack.performed += ctx => playerCasting.FindFocus();
+
+        _controls.Gameplay.SpellView.performed += ctx => gameManager.ShowSpellInfoMenu();
+        _controls.Gameplay.SpellView.canceled += ctx => gameManager.HideSpellInfoMenu();
+
+        _controls.Gameplay.InventoryRight.started += ctx => inventoryManager.InventoryInteraction(1);
+        _controls.Gameplay.InventoryLeft.started += ctx => inventoryManager.InventoryInteraction(-1);
+
+        if(SceneManager.GetActiveScene().name == "MageTower" || SceneManager.GetActiveScene().name == "KingdomScene" || SceneManager.GetActiveScene().name == "Dimension")
+        {
+            _controls.Gameplay.StopMusic.performed += ctx => GameObject.Find("MusicManager").GetComponent<MusicManager>().MusicInteraction();
+        }
+        
+
+        Cursor.visible = false;
+
+        InputSystem.onDeviceChange +=
+        (device, change) =>
+        {
+            switch (change)
+            {
+                case InputDeviceChange.Added:
+                    Debug.Log("Device added: " + device.displayName);
+
+                    if(device.displayName == "Xbox Controller")
+                    {
+                        usingXboxController = true;
+                        usingPS4Controller = false;
+                    }
+                    
+                    if(device.displayName == "Wireless Controller")
+                    {
+                        usingPS4Controller = true;
+                        usingXboxController = false;
+                    }
+
+                    if(device.displayName != "Xbox Controller" && device.displayName != "PS4 Controller")
+                    {
+                        usingPS4Controller = false;
+                        usingXboxController = false;
+                    }
+
+                    UpdateButtonUI();
+                    
+                    break;
+                case InputDeviceChange.Removed:
+                    Debug.Log("Device removed: " + device);
+                    UpdateButtonUI();
+                    break;
+                case InputDeviceChange.ConfigurationChanged:
+                    Debug.Log("Device configuration changed: " + device);
+                    break;
+        }
+
+        UpdateButtonUI();
+    };
+    }
+
+    private void Update()
+    {
+        if(_isTargetActive)
+        {
+            CameraController.stopLook = true;
+            playerCasting.AimTarget(mouseLook);
+            _isLookActive = true;
+        }
+        else
+        {
+            CameraController.stopLook = false;
+        }
+
+        if(_beamActive)
+        {
+            _isTargetActive = true;
+            spellManager.Beam(new Vector2(_lookX, _lookY));
+        }
+
+        playerMovement.Move(_moveX, _moveY);
+
+        cameraController.Look(mouseLook);
+
+        Debug.Log(_lookX);
+    }
+
+    private void UpdateButtonUI()
+    {
+        if(usingXboxController)
+        {
+            promptText.text = "Press RB";
+            playerCasting.ability1ButtonIcon = xboxControls[0];
+            playerCasting.ability2ButtonIcon = xboxControls[1];
+            playerCasting.ability3ButtonIcon = xboxControls[2];
+        }
+
+        if(usingPS4Controller)
+        {
+            promptText.text = "Press R1";
+            playerCasting.ability1ButtonIcon = pS4Controls[0];
+            playerCasting.ability2ButtonIcon = pS4Controls[1];
+            playerCasting.ability3ButtonIcon = pS4Controls[2];
+        }
+
+        if (!usingXboxController && !usingPS4Controller)
+        {
+            promptText.text = "Press F";
+            playerCasting.ability1ButtonIcon = pcControls[0];
+            playerCasting.ability2ButtonIcon = pcControls[1];
+            playerCasting.ability3ButtonIcon = pcControls[2];
+        }
+    }
+
+    private void IsLook()
+    {
+        _isLookActive = false;
+    }
+
+    private void LookInput()
+    {
+        if(_isLookActive)
+        {
+            _isLookActive = false;
+            Debug.Log("ACTIVE");
+        }
+        else
+        {
+            _isLookActive = true;
+            Debug.Log("INACTIVE");
+        }
+    }
+
+    private void OnEnable()
+    {
+        _controls.Gameplay.Enable();
+    }
+
+    private void OnDisable()
+    {
+        _controls.Gameplay.Disable();
+    }
+}
