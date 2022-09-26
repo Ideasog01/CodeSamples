@@ -1,0 +1,90 @@
+using UnityEngine;
+
+[CreateAssetMenu(fileName = "New Spell", menuName = "Spell")]
+public class Spell : ScriptableObject
+{
+    [Header("Spell Information")]
+    public string spellDisplayName;
+
+    [TextArea(5, 10)]
+    public string spellDescription;
+
+    [Header("Spell Statistics")]
+    public float spellCastTime;
+
+    public bool disableMovement;
+
+    public int spellEnergyCost;
+
+    public int spellDamage;
+
+    public int spellHealing;
+
+    public int spellCooldown;
+
+    [Header("Spell Visuals")]
+    public Color spellColor;
+
+    public bool hasParticleCastEffect;
+
+    public bool parentEffect;
+
+    public Vector3 effectRotation;
+
+    public float particleDestroyTime;
+
+    public Vector3 particleScale;
+
+    public Transform particlePrefab;
+
+    public Transform secondParticlePrefab;
+
+    public Vector3 particleOffset;
+
+    [Header("Harvest Settings")]
+    public Item[] harvestResource;
+
+    [Header("Spawn Settings")]
+    public Mesh spawnSpellMesh;
+
+    public Material spawnSpellMaterial;
+
+    public Vector3 spawnSpellScale;
+
+    public bool requiresFocus;
+
+    //Used for transforming the player into a falcon.
+    public void Transform(GameObject playerObj, GameObject transformObj, Animator playerAnim, Camera camera)
+    {
+        if(!transformObj.activeSelf)
+        {
+            playerObj.transform.GetChild(1).gameObject.SetActive(false);
+            GameObject.Find("Main Camera").GetComponent<CameraController>().SetFocus(transformObj, true, new Vector3(0, -1.2f, 0), false);
+            playerAnim.enabled = false;
+            playerObj.gameObject.GetComponent<PlayerMovement>().Transformation();
+            transformObj.SetActive(true);
+            if (GameObject.Find("EnvironmentManager") != null)
+            {
+                GameObject.Find("EnvironmentManager").GetComponent<EnvironmentManager>().isTransformed = true;
+            }
+
+            transformObj.transform.position = playerObj.transform.position + new Vector3(0, 1, 0);
+
+        }
+        else
+        {
+            playerObj.transform.GetChild(1).gameObject.SetActive(true);
+            if (GameObject.Find("EnvironmentManager") != null)
+            {
+                GameObject.Find("EnvironmentManager").GetComponent<EnvironmentManager>().isTransformed = false;
+            }
+            playerObj.gameObject.GetComponent<PlayerMovement>().Transformation();
+            playerObj.transform.position = transformObj.transform.position;
+            playerObj.gameObject.GetComponent<PlayerMovement>().disableMovement = false;
+            playerAnim.enabled = true;
+            camera.gameObject.GetComponent<CameraController>().SetFocus(playerObj, true, new Vector3(0, 0, 0), false);
+            transformObj.SetActive(false);
+
+        }
+    }
+}
