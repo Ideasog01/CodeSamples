@@ -1,0 +1,48 @@
+using System.Collections;
+using UnityEngine;
+
+public class FalconMovement : MonoBehaviour
+{
+    [SerializeField]
+    private Spell falconSpell;
+
+    [SerializeField]
+    private GameObject playerObject;
+
+    [SerializeField]
+    private Animator playerAnim;
+
+    [SerializeField]
+    private Terrain terrain;
+
+    [SerializeField]
+    private Camera mainCam;
+
+    [SerializeField]
+    private float _maxHeight;
+
+    [SerializeField]
+    private float _minHeight;
+
+    [SerializeField]
+    private PrefabManager prefabManager;
+
+    [SerializeField]
+    private GameObject playerObj;
+
+    public void TransformBack()
+    {
+        StartCoroutine(WaitForTransform());
+    }
+        
+
+    private IEnumerator WaitForTransform()
+    {
+        prefabManager.InstantiateEffect(playerObj, this.transform.eulerAngles, 4, new Vector3(1, 1, 1), falconSpell.spellCastTime, true, falconSpell.particlePrefab, new Vector3(0, -0.5f, 0));
+        yield return new WaitForSeconds(falconSpell.spellCastTime);
+        playerObject.transform.position = this.transform.position;
+ 
+        falconSpell.Transform(playerObject, this.gameObject, playerAnim, mainCam);
+        playerObj.GetComponent<PlayerCasting>().disableCasting = false;
+    }   
+}
