@@ -1,0 +1,232 @@
+using UnityEngine;
+
+public class WaveManager : MonoBehaviour
+{
+    //Balcony Door
+    private Transform spawn1;
+    //Elevator Spawn
+    private Transform spawn2;
+    //LobbyFrontDoor
+    private Transform spawn3;
+
+    public Animator balconyDoorAnim;
+    public Animator elevatorDoorAnim;
+    public Animator lobbyFrontDoorAnim;
+
+    public int waveNumber;
+    private int enemyCount;
+    private int enemiesDefeated;
+
+    private PrefabManager prefabManager;
+
+    public bool wavesActive;
+
+    private PlayerProperties playerProps;
+
+    public List<GameObject> createdEnemies;
+
+    private void Start()
+    {
+        prefabManager = GameObject.Find("PrefabManager").GetComponent<PrefabManager>();
+        playerProps = GameObject.Find("PlayerBody").GetComponent<PlayerProperties>();
+        spawn1 = GameObject.Find("Spawn1").transform;
+        spawn2 = GameObject.Find("Spawn2").transform;
+        spawn3 = GameObject.Find("Spawn3").transform;
+        lobbyFrontDoorAnim = GameObject.Find("LobbyDoor1").GetComponent<Animator>();
+        elevatorDoorAnim = GameObject.Find("ElevatorDoor").GetComponent<Animator>();
+        balconyDoorAnim = GameObject.Find("BalconyDoor").GetComponent<Animator>();
+    }
+
+    public void StartWave()
+    {
+        waveNumber += 1;
+        wavesActive = true;
+        if(waveNumber == 1)
+        {
+            StartCoroutine(Wave1Behaviour());
+        }
+        if (waveNumber == 2)
+        {
+            StartCoroutine(Wave2Behaviour());
+        }
+        if (waveNumber == 3)
+        {
+            StartCoroutine(Wave3Behaviour());
+        }
+    }
+
+    public void RestartWave()
+    {
+        if (waveNumber == 1)
+        {
+            StartCoroutine(Wave1Behaviour());
+        }
+        if (waveNumber == 2)
+        {
+            StartCoroutine(Wave2Behaviour());
+        }
+        if (waveNumber == 3)
+        {
+            StartCoroutine(Wave3Behaviour());
+        }
+    }
+
+    private void Update()
+    {
+        if(wavesActive && playerProps.playerDied)
+        {
+            StopAllCoroutines();
+            foreach(GameObject enemy in createdEnemies)
+            {
+                Destroy(enemy);
+            }
+        }
+    }
+
+    public void SpawnEnemy(int enemyType, Transform spawnPoint)
+    {
+        if(enemyType == 0)
+        {
+            if(spawnPoint == spawn1)
+            {
+                Instantiate(prefabManager.trooperEnemyPrefab, spawn1.position, this.transform.rotation);
+                balconyDoorAnim.Play("BalconyDoor_Anim");
+            }
+            if (spawnPoint == spawn2)
+            {
+                Instantiate(prefabManager.trooperEnemyPrefab, spawn2.position, this.transform.rotation);
+                elevatorDoorAnim.Play("ElevatorDoor_Anim");
+            }
+            if (spawnPoint == spawn3)
+            {
+                Instantiate(prefabManager.trooperEnemyPrefab, spawn3.position, this.transform.rotation);
+                lobbyFrontDoorAnim.Play("Door_Anim");
+            }
+        }
+
+        if (enemyType == 1)
+        {
+            if (spawnPoint == spawn1)
+            {
+                Instantiate(prefabManager.hovererEnemyPrefab, spawn1.position, this.transform.rotation);
+                balconyDoorAnim.Play("BalconyDoor_Anim");
+            }
+            if (spawnPoint == spawn2)
+            {
+                Instantiate(prefabManager.hovererEnemyPrefab, spawn2.position, this.transform.rotation);
+                elevatorDoorAnim.Play("ElevatorDoor_Anim");
+            }
+            if (spawnPoint == spawn3)
+            {
+                Instantiate(prefabManager.hovererEnemyPrefab, spawn3.position, this.transform.rotation);
+                lobbyFrontDoorAnim.Play("Door_Anim");
+            }
+        }
+    }
+
+    public void EnemyDefeated()
+    {
+        enemiesDefeated += 1;
+
+
+        if(enemiesDefeated == 9 && waveNumber == 0)
+        {
+            GameObject.Find("Dialogue 1 - Defence Initiated").GetComponent<DialogueProperties>().StartDialogue();
+        }
+        Debug.Log("Enemies Defeated = " + enemiesDefeated);
+
+        if(waveNumber == 1 && enemiesDefeated == 10)
+        {
+            GameObject.Find("Dialogue 2 - Defence Initiated").GetComponent<DialogueProperties>().StartDialogue();
+        }
+
+        if (waveNumber == 2 && enemiesDefeated == 10)
+        {
+            GameObject.Find("Dialogue 3 - Defence Initiated").GetComponent<DialogueProperties>().StartDialogue();
+        }
+
+        if (waveNumber == 3 && enemiesDefeated == 12)
+        {
+            GameObject.Find("Dialogue 4 - Defence Initiated").GetComponent<DialogueProperties>().StartDialogue();
+        }
+
+
+    }
+
+    IEnumerator Wave1Behaviour()
+    {
+        enemiesDefeated = 0;
+        yield return new WaitForSeconds(3);
+        SpawnEnemy(1, spawn2);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(2);
+        SpawnEnemy(1, spawn1);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(8);
+        SpawnEnemy(1, spawn1);
+        yield return new WaitForSeconds(4);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(4);
+        SpawnEnemy(1, spawn2);
+        yield return new WaitForSeconds(8);
+        SpawnEnemy(1, spawn1);
+        yield return new WaitForSeconds(3);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(2);
+        SpawnEnemy(1, spawn2);
+        Debug.Log("WaveComplete");
+    }
+
+    IEnumerator Wave2Behaviour()
+    {
+        enemiesDefeated = 0;
+        yield return new WaitForSeconds(3);
+        SpawnEnemy(1, spawn2);
+        SpawnEnemy(1, spawn3);
+        yield return new WaitForSeconds(2);
+        SpawnEnemy(1, spawn1);
+        SpawnEnemy(1, spawn3);
+        yield return new WaitForSeconds(8);
+        SpawnEnemy(1, spawn1);
+        yield return new WaitForSeconds(4);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(4);
+        SpawnEnemy(1, spawn2);
+        yield return new WaitForSeconds(8);
+        SpawnEnemy(1, spawn1);
+        yield return new WaitForSeconds(3);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(2);
+        SpawnEnemy(1, spawn2);
+        Debug.Log("WaveComplete");
+    }
+
+    IEnumerator Wave3Behaviour()
+    {
+        enemiesDefeated = 0;
+        yield return new WaitForSeconds(3);
+        SpawnEnemy(0, spawn2);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(2);
+        SpawnEnemy(1, spawn1);
+        SpawnEnemy(1, spawn3);
+        yield return new WaitForSeconds(12);
+        SpawnEnemy(1, spawn1);
+        yield return new WaitForSeconds(4);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(4);
+        SpawnEnemy(1, spawn2);
+        yield return new WaitForSeconds(12);
+        SpawnEnemy(1, spawn1);
+        yield return new WaitForSeconds(3);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(2);
+        SpawnEnemy(1, spawn2);
+        yield return new WaitForSeconds(12);
+        SpawnEnemy(1, spawn1);
+        yield return new WaitForSeconds(3);
+        SpawnEnemy(0, spawn3);
+        yield return new WaitForSeconds(2);
+        Debug.Log("WaveComplete");
+    }
+}
