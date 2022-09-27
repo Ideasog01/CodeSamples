@@ -1,0 +1,432 @@
+using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.UI;
+
+public class EnemyClass : MonoBehaviour
+{
+    [SerializeField]
+    private float enemyHealth;
+
+    [SerializeField]
+    private int enemyTypeNum;
+
+    private float distanceToPlayer;
+    private GameObject player;
+
+    private bool destinationSet;
+    private NavMeshAgent thisNavMeshAgent;
+
+    private bool isFloating;
+    private GameObject enemyMesh;
+    private GameObject spawnedMesh;
+    private PrefabManager prefabManager;
+
+    private Vector3 direction;
+    private Quaternion lookDirection;
+
+    private bool once;
+
+    private bool canSeePlayer;
+    private bool attacked;
+
+    private Animator enemyAnim;
+    private bool stopMovement;
+
+    private bool slamActivated;
+    private bool slam;
+
+    private GameObject rocketSpawnPosition;
+    private bool dodge;
+
+    private GameObject projectileSpawn;
+
+    private bool enemyMarked;
+    private GameObject markImage;
+    private float markTimer;
+
+    private Slider enemySlider;
+
+    private WaveManager waveManager;
+
+
+    private void Start()
+    {
+        if(enemyHealth == 0)
+        {
+            enemyHealth = 100;
+        }
+
+        if(enemyTypeNum == 0)
+        {
+            thisNavMeshAgent = this.GetComponent<NavMeshAgent>();
+            enemyAnim = this.transform.GetChild(0).GetComponent<Animator>();
+            projectileSpawn = this.transform.GetChild(2).gameObject;
+            markImage = this.transform.GetChild(4).transform.GetChild(1).gameObject;
+            enemySlider = this.transform.GetChild(4).transform.GetChild(0).gameObject.GetComponent<Slider>();
+            enemySlider.maxValue = enemyHealth;
+            enemySlider.value = enemyHealth;
+        }
+
+        if (enemyTypeNum == 1)
+        {
+            enemySlider = this.transform.GetChild(5).transform.GetChild(0).gameObject.GetComponent<Slider>();
+            enemySlider.maxValue = enemyHealth;
+            markImage = this.transform.GetChild(5).transform.GetChild(1).gameObject;
+            enemySlider.maxValue = enemyHealth;
+            enemySlider.value = enemyHealth;
+            canSeePlayer = true;
+        }
+
+        if (enemyTypeNum == 2)
+        {
+            enemyAnim = this.transform.GetChild(0).GetComponent<Animator>();
+            rocketSpawnPosition = this.transform.GetChild(2).gameObject;
+            enemySlider = this.transform.GetChild(3).transform.GetChild(0).gameObject.GetComponent<Slider>();
+            enemySlider.maxValue = enemyHealth;
+            markImage = this.transform.GetChild(3).transform.GetChild(1).gameObject;
+            enemySlider.maxValue = enemyHealth;
+            enemySlider.value = enemyHealth;
+        }
+        player = GameObject.Find("PlayerBody");
+        enemyMesh = this.transform.GetChild(1).gameObject;
+        prefabManager = GameObject.Find("PrefabManager").GetComponent<PrefabManager>();
+        waveManager = GameObject.Find("WaveManager").GetComponent<WaveManager>();
+        
+        if(waveManager.wavesActive)
+        {
+            waveManager.createdEnemies.Add(this.gameObject);
+        }
+
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if(other.gameObject.tag == "PlayerProjectile")
+        {
+            enemyHealth -= 10;
+        }
+
+        if(!stopMovement && other.gameObject.tag == "ShockWaveProjectile" && other.gameObject.GetComponent<PlayerProjectile>().increaseSize)
+        {
+            if (enemyTypeNum == 0)
+            {
+                this.transform.GetChild(5).gameObject.GetComponent<ParticleSystem>().Play();
+            }
+            if (enemyTypeNum == 1)
+            {
+                this.transform.GetChild(6).gameObject.GetComponent<ParticleSystem>().Play();
+            }
+            FreezeMovement();
+
+            Debug.Log(gameObject.name + " FROZEN");
+        }
+    }
+
+    private void Update()
+    {
+        distanceToPlayer = Vector3.Distance(this.transform.position, player.transform.position);
+        direction = (player.transform.position - this.transform.position).normalized;
+        lookDirection = Quaternion.LookRotation(direction);
+
+        if(distanceToPlayer < 30 && enemyTypeNum != 2)
+        {
+            canSeePlayer = true;
+        }
+        else
+        {
+            canSeePlayer = false;
+        }
+
+        if(markImage.activeSelf && !enemyMarked)
+        {
+            markImage.SetActive(false);
+        }
+
+        if(!markImage.activeSelf && enemyMarked)
+        {
+            markImage.SetActive(true);
+        }
+
+        if(markTimer > 0)
+        {
+            markTimer -= Time.deltaTime * 1;
+        }
+
+        if(enemyMarked && markTimer <= 0)
+        {
+            enemyMarked = false;
+        }
+
+        if(enemyTypeNum == 2 && distanceToPlayer <= 10)
+        {
+            canSeePlayer = true;
+        }
+
+        if (canSeePlayer && enemyHealth > 0 && !stopMovement)
+        {
+            if(enemyTypeNum == 0 || enemyTypeNum == 2)
+            {
+                transform.rotation = Quaternion.Slerp(transform.rotation, lookDirection, Time.deltaTime * 4);
+            }
+
+            if(!slamActivated && distanceToPlayer < 6 && enemyTypeNum == 2)
+            {
+                StartCoroutine(BruiserSlam());
+                slamActivated = true;
+            }
+
+            if(dodge)
+            {
+                this.transform.Translate(Vector3.right * Time.deltaTime * 6);
+            }
+        }
+
+        
+
+        if(enemyHealth <= 0 && !once && enemyTypeNum == 0)
+        {
+            StopAllCoroutines();
+            enemyMesh.SetActive(false);
+            spawnedMesh = Instantiate(prefabManager.trooperSeperatedPrefab.gameObject, this.transform.position, this.transform.rotation);
+            Destroy(spawnedMesh, 2);
+            Destroy(this.gameObject, 2);
+            stopMovement = false;
+            enemySlider.gameObject.SetActive(false);
+            markImage.SetActive(false);
+            GameObject.Find("WaveManager").GetComponent<WaveManager>().EnemyDefeated();
+            GameObject.Find("AudioManager").GetComponent<AudioManager>().PlayAudio("PickupSound");
+            if (waveManager.wavesActive)
+            {
+                waveManager.createdEnemies.Remove(this.gameObject);
+            }
+            once = true;
+        }
+
+        if (enemyHealth <= 0 && !once && enemyTypeNum == 1)
+        {
+            GameObject.Find("TutorialManager").GetComponent<TutorialManager>().EnemyDefeated(enemyTypeNum);
+            StopAllCoroutines();
+            stopMovement = false;
+            enemySlider.gameObject.SetActive(false);
+            this.GetComponent<Rigidbody>().AddForce(-this.transform.forward * 2000);
+            GameObject.Find("WaveManager").GetComponent<WaveManager>().EnemyDefeated();
+            GameObject.Find("AudioManager").GetComponent<AudioManager>().PlayAudio("PickupSound");
+            if (waveManager.wavesActive)
+            {
+                waveManager.createdEnemies.Remove(this.gameObject);
+            }
+            Destroy(this.gameObject, 2);
+            once = true;
+        }
+
+        if(enemyHealth <= 0 && enemyTypeNum == 1)
+        {
+            transform.eulerAngles = this.transform.eulerAngles + new Vector3(0, -2, 0);
+        }
+
+        if (canSeePlayer && !isFloating && isActiveAndEnabled && !stopMovement)
+        {
+            if (enemyTypeNum == 0 && enemyHealth > 0 && distanceToPlayer > 4)
+            {
+                thisNavMeshAgent.isStopped = false;
+                SetDestination();
+            }
+
+            if(enemyTypeNum == 1 && enemyHealth > 0 && distanceToPlayer > 4)
+            {
+                this.transform.position = Vector3.MoveTowards(this.transform.position, player.transform.position + new Vector3(0, 2, 0), Time.deltaTime * 4);
+            }
+
+            if (enemyTypeNum == 2 && enemyHealth > 0 && !slamActivated)
+            {
+                this.transform.position = Vector3.MoveTowards(this.transform.position, player.transform.position + new Vector3(0, 5, 0), Time.deltaTime * 4);
+            }
+        }
+
+        if (canSeePlayer && !isFloating && isActiveAndEnabled)
+        {
+            if(enemyTypeNum == 0)
+            {
+                thisNavMeshAgent.isStopped = true;
+                enemyAnim.SetBool("Walk", false);
+
+                if(!attacked)
+                {
+                    EnemyAttack();
+                    attacked = true;
+                }
+            } 
+        }
+
+        if (canSeePlayer && !isFloating && isActiveAndEnabled)
+        {
+            if (enemyTypeNum == 1)
+            {
+                Vector3 lookVector = player.transform.position - transform.position;
+                lookVector.y = transform.position.y;
+                Quaternion rot = Quaternion.LookRotation(lookVector);
+                transform.rotation = Quaternion.Slerp(transform.rotation, rot, 1);
+
+                if (!attacked)
+                {
+                    EnemyAttack();
+                    attacked = true;
+                    Debug.Log("Attack Initiated");
+                }
+            }
+        }
+
+        if(player.GetComponent<PlayerProperties>().bruiserBattle && player.GetComponent<PlayerProperties>().playerDied && enemyTypeNum == 2)
+        {
+            Destroy(this.gameObject);
+        }
+
+        if (attacked == true && enemyTypeNum == 1)
+        {
+            transform.eulerAngles = new Vector3(-80, transform.eulerAngles.y, transform.eulerAngles.z);
+        }
+
+        if(!attacked && enemyTypeNum == 2 && canSeePlayer)
+        {
+            StartCoroutine(BruiserAttack());
+            attacked = true;
+        }
+    }
+
+    void SetDestination()
+    {
+        thisNavMeshAgent.SetDestination(player.transform.position);
+        enemyAnim.SetBool("Walk", true);
+    }
+
+    //Allows the player to successfully 'grab' the enemy in mid-air by disabling the NavMeshAgent component
+    public void ControlNavMeshAgent()
+    {
+        if(!isFloating)
+        {
+            if(enemyTypeNum == 0)
+            {
+                thisNavMeshAgent.enabled = false;
+                isFloating = true;
+            }
+        }
+        else
+        {
+            if(enemyTypeNum == 0)
+            {
+                thisNavMeshAgent.enabled = true;
+                isFloating = false;
+            }
+            
+        }
+    }
+
+    public void DamageEnemy(float damage)
+    {
+        if(enemyMarked)
+        {
+            enemyHealth -= damage * 2;
+        }
+        else
+        {
+            enemyHealth -= damage;
+        }
+
+        enemySlider.value = enemyHealth;
+    }
+
+    public void EnemyAttack()
+    {
+        if(!stopMovement && enemyHealth > 0)
+        {
+            if (enemyTypeNum == 1)
+            {
+                StartCoroutine(HoverAttack());
+            }
+
+            if (enemyTypeNum == 0)
+            {
+                enemyAnim.Play("Enemy_Attack_Anim");
+            }
+
+            if(enemyTypeNum == 2)
+            {
+                Instantiate(prefabManager.rocketPrefab, rocketSpawnPosition.transform.position, this.transform.rotation);
+                Debug.Log("Rocket Launched");
+                StartCoroutine(BruiserAttack());
+            }
+        }      
+    }
+
+    IEnumerator HoverAttack()
+    {
+        yield return new WaitForSeconds(3);
+        Instantiate(prefabManager.hoverProjectile, this.transform.GetChild(2).transform.position, this.transform.rotation);
+        Debug.Log("Attack 1");
+        yield return new WaitForSeconds(1);
+        Instantiate(prefabManager.hoverProjectile, this.transform.GetChild(3).transform.position, this.transform.rotation);
+        Debug.Log("Attack 2");
+        yield return new WaitForSeconds(3);
+        dodge = true;
+        yield return new WaitForSeconds(1.5f);
+        dodge = false;
+        attacked = false;
+    }
+
+    public void TrooperProjectile()
+    {
+        Instantiate(prefabManager.trooperProjectile, projectileSpawn.transform.position, this.transform.rotation);
+    }
+
+    public void TrooperAttackFinished()
+    {
+        attacked = false;
+    }
+
+
+    public void FreezeMovement()
+    {
+        stopMovement = true;
+        StartCoroutine(Unfreeze());
+    }
+
+    IEnumerator Unfreeze()
+    {
+        yield return new WaitForSeconds(5);
+        stopMovement = false;
+    }
+
+    IEnumerator BruiserAttack()
+    {
+        yield return new WaitForSeconds(3);
+        Instantiate(prefabManager.rocketPrefab, rocketSpawnPosition.transform.position, this.transform.rotation);
+        Debug.Log("Rocket Launched");
+        yield return new WaitForSeconds(3);
+        Instantiate(prefabManager.rocketPrefab, rocketSpawnPosition.transform.position, this.transform.rotation);
+        yield return new WaitForSeconds(3);
+        Instantiate(prefabManager.rocketPrefab, rocketSpawnPosition.transform.position, this.transform.rotation);
+        yield return new WaitForSeconds(7);
+        attacked = false;
+    }
+
+    IEnumerator BruiserSlam()
+    {
+        enemyAnim.Play("BruiserSlam_Anim");
+        yield return new WaitForSeconds(1.5f);
+        slam = true;
+        if (enemyTypeNum == 2 && slam && distanceToPlayer < 8)
+        {
+            player.GetComponent<PlayerProperties>().DamagePlayer(50, true);
+        }
+        yield return new WaitForSeconds(1);
+        slam = false;
+        yield return new WaitForSeconds(5);
+        slamActivated = false;
+    }
+
+    public void EnemyMark()
+    {
+        enemyMarked = true;
+        markTimer = 4;
+    }
+}
