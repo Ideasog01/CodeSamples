@@ -1,0 +1,120 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+public class TutorialManager : MonoBehaviour
+{
+    private Text tutorialText;
+    private Animator tutorialAnim;
+    private PrefabManager prefabManager;
+
+    private bool markedAbilityUsed;
+    private bool shockWaveUsed;
+    private bool magneticUsed;
+
+    public bool destroyEnemies;
+
+    public GameObject consolePrompt;
+    private int numberOfDefeatedEnemies;
+
+    private bool enemiesDefeated;
+    public bool audotoriumEntered;
+
+    private void Start()
+    {
+        tutorialAnim = GameObject.Find("TutorialImage1").GetComponent<Animator>();
+        tutorialText = GameObject.Find("TutorialText").GetComponent<Text>();
+        prefabManager = GameObject.Find("PrefabManager").GetComponent<PrefabManager>();
+    }
+
+    //Displays a message to the player on the HUD
+    public void TutorialMessage(string tutorialMessage, bool show)
+    {
+        if (tutorialMessage != "")
+        {
+            tutorialAnim.SetBool("IN", show);
+            tutorialText.text = tutorialMessage;
+        }
+        else
+        {
+            tutorialAnim.SetBool("IN", show);
+        }
+
+    }
+
+    public void EnemyDestroyed(int enemyType, Vector3 spawnPosition, bool isMarked)
+    {
+        if (isMarked)
+        {
+            //Activates when the marked ability is used for the first time
+            if (!markedAbilityUsed)
+            {
+                GameObject.Find("Dialogue 4 - Activation").GetComponent<DialogueProperties>().StartDialogue();
+                markedAbilityUsed = true;
+            }
+        }
+        else
+        {
+            if (!markedAbilityUsed)
+            {
+                Instantiate(prefabManager.TrainingBot, spawnPosition += new Vector3(0, 0, -3), this.transform.rotation);
+            }
+
+        }
+
+        if (!magneticUsed && enemiesDefeated)
+        {
+            Instantiate(prefabManager.TrainingBot, new Vector3(-40, 4, 4), this.transform.rotation);
+        }
+    }
+
+    public void ShockWaveAbilityUsed()
+    {
+        //Activates when the shock wave ability has been used for the first time
+        if (!shockWaveUsed)
+        {
+            Debug.Log("SHOCKWAVE USED");
+            GameObject.Find("TutorialManager").GetComponent<TutorialManager>().TutorialMessage("", false);
+            GameObject.Find("Dialogue 5 - Activation").GetComponent<DialogueProperties>().StartDialogue();
+            shockWaveUsed = true;
+        }
+
+    }
+
+    public void MagneticAbilityUsed()
+    {
+        //Activates when the magnetic ability has been used for the first time
+        if (!magneticUsed)
+        {
+            numberOfDefeatedEnemies = 0;
+            destroyEnemies = true;
+            GameObject.Find("TutorialManager").GetComponent<TutorialManager>().TutorialMessage("", false);
+            GameObject.Find("Dialogue 3 - Unlock Magnetics").GetComponent<DialogueProperties>().StartDialogue();
+            magneticUsed = true;
+        }
+
+    }
+
+    public void EnemyDefeated(int enemyType)
+    {
+        //When a specified number of enemies have been defeated, allow the player to progress by activating dialogue
+
+        if (enemyType == 1)
+        {
+            numberOfDefeatedEnemies += 1;
+        }
+
+        if (numberOfDefeatedEnemies == 2 && !enemiesDefeated)
+        {
+            destroyEnemies = false;
+            GameObject.Find("Dialogue 1 - Unlock Magnetics").GetComponent<DialogueProperties>().StartDialogue();
+            numberOfDefeatedEnemies = 0;
+            enemiesDefeated = true;
+        }
+
+        if (numberOfDefeatedEnemies == 1 && audotoriumEntered)
+        {
+            GameObject.Find("Dialogue 1 - A Way").GetComponent<DialogueProperties>().StartDialogue();
+            numberOfDefeatedEnemies = 0;
+        }
+    }
+}
