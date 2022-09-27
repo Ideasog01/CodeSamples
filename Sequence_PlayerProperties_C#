@@ -1,0 +1,164 @@
+using UnityEngine;
+
+public class PlayerProperties : MonoBehaviour
+{
+    public float playerHealth;
+    public float maxPlayerHealth;
+
+    private UIManager uiManager;
+
+    private ParticleSystem damageEFX;
+
+    public int numberOfPowercells;
+
+    public Vector3 checkpointPosition;
+    public bool playerDied;
+
+    public bool bruiserBattle;
+
+    private float healthRegenTimer;
+    private bool regenStarted;
+    private int regensActivated;
+
+
+    void Awake()
+    {
+        maxPlayerHealth = 200;
+        playerHealth = maxPlayerHealth;
+        uiManager = GameObject.Find("UIManager").GetComponent<UIManager>();
+        damageEFX = GameObject.Find("DamageEFX").GetComponent<ParticleSystem>();
+        checkpointPosition = this.transform.position;
+    }
+
+    private void Update()
+    {
+        if(Input.GetKeyDown(KeyCode.C) && numberOfPowercells > 0)
+        {
+            UsePowerCell();
+            numberOfPowercells -= 1;
+        }
+
+        if(numberOfPowercells > 3)
+        {
+            numberOfPowercells = 3;
+        }
+
+        if(playerHealth <= 0 && !playerDied)
+        {
+            uiManager.FadeIn();
+            playerDied = true;
+        }
+
+        if(playerDied && Input.GetKeyDown(KeyCode.Return))
+        {
+            uiManager.FadeOut();
+        }
+
+        if (this.transform.position.y < -10)
+        {
+            playerHealth = 0;
+        }
+
+        if(playerHealth < maxPlayerHealth && !regenStarted)
+        {
+            healthRegenTimer = 16;
+            regenStarted = true;
+        }
+
+        if(healthRegenTimer > 0 && regenStarted)
+        {
+            healthRegenTimer -= Time.deltaTime * 1;
+        }
+
+        if(healthRegenTimer <= 8 && regenStarted && regensActivated == 0)
+        {
+            playerHealth += 20;
+            regensActivated += 1;
+            uiManager.UpdateUI();
+        }
+
+        if(healthRegenTimer <= 4 && regenStarted && regensActivated == 1)
+        {
+            playerHealth += 20;
+            regensActivated += 1;
+            uiManager.UpdateUI();
+        }
+
+        if (healthRegenTimer <= 2 && regenStarted && regensActivated == 2)
+        {
+            playerHealth += 10;
+            regensActivated += 1;
+            uiManager.UpdateUI();
+        }
+
+        if(healthRegenTimer <= 0)
+        {
+            regenStarted = false;
+            regensActivated = 0;
+        }
+
+        if(regenStarted && playerHealth == maxPlayerHealth)
+        {
+            regenStarted = false;
+            healthRegenTimer = 0;
+            regensActivated = 0;
+        }
+    }
+
+    public void UsePowerCell()
+    {
+        playerHealth += 25;
+        uiManager.UpdateUI();
+    }
+
+    public void DamagePlayer(float damageAmount, bool shake)
+    {
+        playerHealth -= damageAmount;
+        Debug.Log("PLAYER RECIEVED DAMAGE, AMOUNT = " + damageAmount);
+        uiManager.UpdateUI();
+        damageEFX.Play();
+        regenStarted = false;
+        healthRegenTimer = 0;
+        regensActivated = 0;
+        
+
+        if (shake)
+        {
+            int randomNum = Random.Range(0, 2);
+            if(randomNum == 0)
+            {
+                GameObject.Find("Main Camera").GetComponent<Animator>().Play("CameraShake_1_Anim");
+            }
+            if(randomNum == 1)
+            {
+                GameObject.Find("Main Camera").GetComponent<Animator>().Play("CameraShake_2_Anim");
+            }
+            if (randomNum == 2)
+            {
+                GameObject.Find("Main Camera").GetComponent<Animator>().Play("CameraShake_3_Anim");
+            }
+            shake = false;
+        }
+    }
+
+    public void SetNewCheckpoint(Vector3 positon)
+    {
+        checkpointPosition = positon;
+    }
+
+    public void ResetPosition()
+    {
+        if(bruiserBattle) //If the boss battle is active, set position to specified location
+        {
+            Instantiate(GameObject.Find("PrefabManager").GetComponent<PrefabManager>().bruiserEnemyPrefab, new Vector3(17, 4, -77), this.transform.rotation);
+        }
+        if(GameObject.Find("WaveManager").GetComponent<WaveManager>().wavesActive)
+        {
+            GameObject.Find("WaveManager").GetComponent<WaveManager>().RestartWave();
+        }
+        this.transform.position = checkpointPosition;
+        playerDied = false;
+        playerHealth = maxPlayerHealth;
+        GameObject.Find("AttackTypeManager").GetComponent<AttackTypeManager>().GenerateNewAttackTypes();
+    }
+}
