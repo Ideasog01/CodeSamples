@@ -1,0 +1,46 @@
+using UnityEngine;
+using UnityEngine.Events;
+
+[System.Serializable]
+public class Dialogue
+{
+    [SerializeField]
+    private TextAsset inkJSONAsset = null;
+
+    [SerializeField]
+    private string characterName;
+
+    [SerializeField]
+    private Transform cameraTarget; //The object that the camera should follow when dialogue encounter is active.
+
+    [SerializeField]
+    private Quest quest;
+
+    [SerializeField]
+    private UnityEvent dialogueEvent; //The event that should happen when this dialogue encounter is complete.
+
+    public TextAsset InkJSONAsset
+    {
+        get { return inkJSONAsset; }
+    }
+
+    public string CharacterName
+    {
+        get { return characterName; }
+    }
+
+    public Transform CameraTarget
+    {
+        get { return cameraTarget; }
+    }
+
+    public Quest QuestRef
+    {
+        get { return quest; }
+    }
+
+    public UnityEvent DialogueEvent
+    {
+        get { return dialogueEvent; }
+    }
+}
