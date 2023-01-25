@@ -1,0 +1,170 @@
+using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
+using Cinemachine;
+using System;
+using Ink.Runtime;
+
+//Disclaimer: Some of this code is supplied via the free Ink package on the Unity Asset Store. I have adapted the code to achieve the desired dialogue system.
+
+public class DialogueManager : MonoBehaviour
+{
+    public static event Action<Story> OnCreateStory;
+
+    public Story story;
+
+    [SerializeField]
+    private GameObject dialogueCanvas;
+
+    [SerializeField]
+    private TextMeshProUGUI dialogueText;
+
+    [SerializeField]
+    private TextMeshProUGUI characterText;
+
+    [SerializeField]
+    private GameObject optionsObj;
+
+    [SerializeField]
+    private TextMeshProUGUI[] optionTextArray;
+
+    [SerializeField]
+    private CinemachineVirtualCamera cameraSettings;
+
+    [SerializeField]
+    private PlayerData playerData;
+
+    private DialogueTrigger dialogueTrigger;
+
+    private QuestManager _questManager;
+
+    private void Awake()
+    {
+        _questManager = this.GetComponent<QuestManager>();
+    }
+
+    // Creates a new Story object with the compiled story which we can then play!
+    public void StartStory(DialogueTrigger dialogue)
+    {
+        if (playerData.incompleteQuests.Contains(dialogue.Dialogues[dialogue.DialogueIndex].QuestRef) && playerData.completeQuest.Contains(dialogue.Dialogues[dialogue.DialogueIndex].QuestRef)) //Checks the quest has not been completed or added.
+        {
+            Debug.Log("Quest has already been added/completed. \nYou need to make sure that the quest cannot be recieved more than once.");
+            return;
+        }
+
+        dialogueCanvas.SetActive(true);
+        dialogueTrigger = dialogue;
+
+        Dialogue dialogueRef = dialogueTrigger.Dialogues[dialogueTrigger.DialogueIndex];
+
+        if(dialogueRef.CameraTarget != null)
+        {
+            cameraSettings.Follow = dialogueRef.CameraTarget;
+        }
+
+        story = new Story(dialogueRef.InkJSONAsset.text);
+        characterText.text = dialogueRef.CharacterName;
+
+        if (OnCreateStory != null)
+        {
+            OnCreateStory(story);
+        }
+
+        dialogueTrigger.IsActive = false;
+
+        RefreshView();
+    }
+
+    public void ContinueStory()
+    {
+        if(dialogueTrigger != null)
+        {
+            if (story.canContinue)
+            {
+                RefreshView();
+            }
+            else
+            {
+                if (story.currentChoices.Count == 0)
+                {
+                    EndDialogue();
+                }
+            }
+        }
+    }
+
+    // This is the main function called every time the story changes. It does a few things:
+    // Destroys all the old content and choices.
+    // Continues over all the lines of text, then displays all the choices. If there are no choices, the story is finished!
+    void RefreshView()
+    {
+        // Read all the content until we can't continue any more
+        if(story.canContinue)
+        {
+            // Continue gets the next line of the story
+            string text = story.Continue();
+            // This removes any white space from the text.
+            text = text.Trim();
+            // Display the text on screen!
+            dialogueText.text = text;
+        }
+
+        // Display all the choices, if there are any!
+        if (story.currentChoices.Count > 0)
+        {
+            optionsObj.SetActive(true);
+
+            for (int i = 0; i < story.currentChoices.Count; i++)
+            {
+                Choice choice = story.currentChoices[i];
+                Button button = optionTextArray[i].transform.parent.GetComponent<Button>();
+                optionTextArray[i].text = choice.text.Trim();
+
+                // Tell the button what to do when we press it
+                button.onClick.AddListener(delegate 
+                {
+                    OnClickChoiceButton(choice);
+                });
+            }
+
+            Debug.Log("Choice count: " + story.currentChoices.Count);
+        }
+        // If we've read all the content and there's no choices, the story is finished!
+        else
+        {
+            optionsObj.SetActive(false);
+        }
+    }
+
+    // When we click the choice button, tell the story to choose that choice!
+    void OnClickChoiceButton(Choice choice)
+    {
+        if(choice.index < story.currentChoices.Count)
+        {
+            Debug.Log("Choice chosen: " + choice.index + "\n" + choice.text.Trim());
+            story.ChooseChoiceIndex(choice.index);
+            RefreshView();
+        }
+    }
+
+    private void EndDialogue()
+    {
+        bool giveQuest = (bool)story.variablesState["giveQuest"];
+
+        if(giveQuest)
+        {
+            _questManager.UpdateQuest(dialogueTrigger.Dialogues[dialogueTrigger.DialogueIndex].QuestRef);
+            Debug.Log("Quest Given");
+        }
+
+        dialogueTrigger.Dialogues[dialogueTrigger.DialogueIndex].DialogueEvent.Invoke(); //Invokes the dialogue event assigned to the current Dialogue in inspector. For example, unlocks a door.
+
+        optionsObj.SetActive(false);
+        dialogueCanvas.SetActive(false);
+        cameraSettings.Follow = GameManager.playerController.transform;
+
+        dialogueTrigger.DialogueIndex++; //The dialogue index for each new dialogue encounter
+        dialogueTrigger.IsActive = false;
+        dialogueTrigger = null;
+    }
+}
