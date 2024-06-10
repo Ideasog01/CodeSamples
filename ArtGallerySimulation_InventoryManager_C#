@@ -1,4 +1,5 @@
 using UnityEngine;
+using System.Collections.Generic;
 
 public class InventoryManager : MonoBehaviour
 {
@@ -74,5 +75,34 @@ public class InventoryManager : MonoBehaviour
         GameManager.InterfaceManager.UpdateInventoryItems();
 
         return itemRemoved;
+    }
+
+    public void RemoveAllItemsWithTag(string tag)
+    {
+        InventoryItem[] inventory = GameManager.InterfaceManager.InventoryItemArray;
+
+        List<Item> itemsToRemove = new List<Item>();
+
+        for (int i = 0; i < inventory.Length; i++)
+        {
+            if (inventory[i].AssignedItem != null)
+            {
+                foreach (string itemTag in inventory[i].AssignedItem.ItemTags)
+                {
+                    if (itemTag == tag)
+                    {
+                        for(int x = 0; x < inventory[i].ItemStackSize; x++)
+                        {
+                            itemsToRemove.Add(inventory[i].AssignedItem);
+                        }
+                    }
+                }
+            }
+        }
+
+        foreach(Item itemToRemove in itemsToRemove)
+        {
+            RemoveItem(itemToRemove);
+        }
     }
 }
