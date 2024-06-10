@@ -4,11 +4,15 @@ using UnityEngine.UI;
 
 public class DialogueManager : MonoBehaviour
 {
+    public bool dialogueActive;
+
     [Header("Option Display")]
 
     [SerializeField] private GameObject optionsInterface;
 
     [SerializeField] private TextMeshProUGUI[] optionTextArray;
+
+    [SerializeField] private GameObject[] optionTextObjectArray;
 
     [Header("User Dialogue Display")]
 
@@ -18,196 +22,311 @@ public class DialogueManager : MonoBehaviour
 
     [SerializeField] private Button continueDialogueButton;
 
+    [Header("Explain Objects")]
+
+    [SerializeField] private GameObject playerModel;
+
+    [SerializeField] private GameObject tabletModel;
+
+    private DialogueInteractive _dialogueInteractive;
+
     private NPCController _npcSpeaker;
 
-    public void StartDialogue(NPCController npcSpeaker)
+    private string[] _dialogueLines = new string[0];
+
+    private string[] _optionArray;
+
+    private int _dialogueIndex;
+
+    public void StartDialogue(DialogueInteractive dialogueInteractive, NPCController npcSpeaker)
     {
-        if (_npcSpeaker == null)
+        if(_dialogueLines.Length > 0)
+        {
+            return;
+        }
+
+        dialogueActive = true;
+
+        if (npcSpeaker != null)
         {
             _npcSpeaker = npcSpeaker;
             _npcSpeaker.DialogueCanvas.SetActive(true);
 
+            _dialogueInteractive = dialogueInteractive;
+
             _npcSpeaker.NPCCamera.SetActive(true);
-            GameManager.InterfaceManager.HUDCanvas.SetActive(false);
 
-            continueDialogueButton.gameObject.SetActive(true);
-
-            NextDialogue();
-
-            GameManager.InputManager.InputInterface.SetActive(false);
-
-            Cursor.lockState = CursorLockMode.None;
-            Cursor.visible = true;
-            GameManager.StarterAssetsInputs.cursorInputForLook = false;
-
-            GameManager.FirstPersonController.enabled = false;
+            if(_npcSpeaker.TryGetComponent(out VisitorNPC npc))
+            {
+                npc.ObjectiveActiveIcon.SetActive(false);
+            }
         }
+        else if(dialogueInteractive != null)
+        {
+            _dialogueInteractive = dialogueInteractive;
+
+            if(_dialogueInteractive.DialogueCamera != null)
+            {
+                _dialogueInteractive.DialogueCamera.SetActive(true);
+            }
+        }
+        else
+        {
+            Debug.Log("Dialogue is null!");
+        }
+
+        playerModel.SetActive(_npcSpeaker == null); //Is explaining instead of speaking to an NPC
+
+        continueDialogueButton.gameObject.SetActive(true);
+
+        string readFromFilePath = Application.streamingAssetsPath + "/TextAssets/" + _dialogueInteractive.DialogueTextPath;
+        _dialogueLines = System.IO.File.ReadAllLines(readFromFilePath);
+
+        NextDialogue();
+
+        GameManager.TabletMenu.EnableTabletMenu(false);
+        InputManager.EnablePlayerInput(false, false);
+
+        Debug.Log("Dialogue Started!");
     }
 
     public void NextDialogue()
     {
-        DialogueInteractive activeDialogue = _npcSpeaker.ActiveDialogue;
+        Debug.Log("Displaying next dialogue!");
 
-        DialogueThread thread = activeDialogue.DialogueArray[activeDialogue.DialogueThreadIndex];
+        string dialogueLine = _dialogueLines[_dialogueIndex];
 
-        if (thread.DialogueIndex >= thread.Dialogue.Length)
+        if(_dialogueIndex >= _dialogueLines.Length)
         {
-            if (thread.OptionIndex.Length == 0)
-            {
-                if (thread.AutoDialogueIndex != 0)
-                {
-                    activeDialogue.DialogueThreadIndex = thread.AutoDialogueIndex;
-                    NextDialogue();
-                }
-                else
-                {
-                    EndDialogue();
-                }
-            }
-            else
-            {
-                DisplayDialogueOptions();
-            }
-
-            return;
-        }
-
-        Dialogue dialogue = thread.Dialogue[thread.DialogueIndex];
-
-        Animator animator = _npcSpeaker.Animator;
-
-        if (dialogue.AnimationClipTrigger != "")
-        {
-            animator.SetTrigger(dialogue.AnimationClipTrigger);
-        }
-
-        if (dialogue.SpeakerName == "User")
-        {
-            userDialogueDisplay.SetActive(true);
-            userDialogueText.text = dialogue.DialogueString;
+            EndDialogue();
         }
         else
         {
-            userDialogueDisplay.SetActive(false);
-            _npcSpeaker.DialogueText.text = dialogue.DialogueString;
+            if (_dialogueLines[_dialogueIndex][0] == '*') //Is an option, so display all objects
+            {
+                _optionArray = new string[3];
+                int optionIndex = 0;
+
+                _optionArray[0] = "";
+                _optionArray[1] = "";
+                _optionArray[2] = "";
+
+                for(int i = 1; i < dialogueLine.Length; i++)
+                {
+                    if(dialogueLine[i] == '*') // '*' == Option
+                    {
+                        optionIndex++;
+                    }
+                    else
+                    {
+                        _optionArray[optionIndex] += dialogueLine[i];
+                    }
+                }
+
+                DisplayDialogueOptions(_optionArray);
+            }
+            else
+            {
+                if (_dialogueLines[_dialogueIndex].Length > 0) //This string indicates that the dialogue should end
+                {
+                    if (_dialogueLines[_dialogueIndex][0] == '/') // '/' == End dialogue
+                    {
+                        if (_dialogueLines[_dialogueIndex].Length == 1) //If the length is larger than one, then a unity event should be called
+                        {
+                            EndDialogue();
+                        }
+                        else //For events only (Finds the index of the event and calls the event accordingly.
+                        {
+                            string stringToInt = _dialogueLines[_dialogueIndex].Substring(1);
+                            int eventIndex = int.Parse(stringToInt);
+                            _dialogueInteractive.DialogueEndEvent[eventIndex].Invoke();
+
+                            _dialogueInteractive.DialogueEndEvent[eventIndex].Invoke();
+
+                            EndDialogue();
+                        }
+
+                        return;
+                    }
+                }
+
+                //We can display the current line of dialogue, removing the character name
+                string name = "";
+                int startIndex = 0;
+
+                for (int i = 0; i < dialogueLine.Length; i++)
+                {
+                    if (dialogueLine[i] != ':')
+                    {
+                        name += dialogueLine[i];
+                    }
+                    else
+                    {
+                        startIndex = i + 1;
+                        break;
+                    }
+                }
+
+                string dialogue = dialogueLine.Substring(startIndex);
+                string finalDialogue = "";
+
+                //We also need to remove the @ animation trigger and activate the animation using it
+                for (int i = 0; i < dialogue.Length; i++)
+                {
+                    if (dialogue[i] == '@')
+                    {
+                        string animationTrigger = dialogue.Substring(i + 1);
+
+                        if(_npcSpeaker != null)
+                        {
+                            _npcSpeaker.Animator.SetTrigger(animationTrigger);
+                        }
+                        
+                        break;
+                    }
+                    else
+                    {
+                        finalDialogue += dialogue[i];
+                    }
+                }
+
+                Debug.Log(name + ":" + finalDialogue);
+
+                if (name == "User")
+                {
+                    userDialogueDisplay.SetActive(true);
+                    userDialogueText.text = finalDialogue;
+                }
+                else
+                {
+                    userDialogueDisplay.SetActive(false);
+                    _npcSpeaker.DialogueText.gameObject.SetActive(true);
+                    _npcSpeaker.DialogueText.text = finalDialogue;
+                }
+
+                continueDialogueButton.interactable = true;
+            }
+
+            _dialogueIndex++;
         }
-
-        continueDialogueButton.interactable = true;
-
-        thread.DialogueIndex++;
     }
 
     public void EndDialogue()
     {
-        if (_npcSpeaker.ActiveDialogue.ObjectiveToGive != null)
+        Debug.Log("Ending Dialogue");
+
+        dialogueActive = false;
+
+        if (_npcSpeaker != null)
         {
-            GameManager.ObjectiveManager.StartObjective(_npcSpeaker.ActiveDialogue.ObjectiveToGive);
+            if (_npcSpeaker.ActiveDialogue.ObjectiveToGive != null)
+            {
+                GameManager.ObjectiveManager.StartObjective(_npcSpeaker.ActiveDialogue.ObjectiveToGive);
+            }
+
+            if (_npcSpeaker.ActiveDialogue.ObjectiveToComplete != null)
+            {
+                GameManager.ObjectiveManager.UpdateObjectiveProgress((_npcSpeaker.ActiveDialogue.ObjectiveToComplete));
+            }
+
+            _npcSpeaker.NPCCamera.SetActive(false);
+
+            if (_npcSpeaker.TryGetComponent(out VisitorNPC npc))
+            {
+                npc.RemoveObjective();
+            }
+
+            _npcSpeaker.DialogueCanvas.SetActive(false);
+            _npcSpeaker.ActiveDialogue.IsActive = false;
+            _npcSpeaker.ActiveDialogue = null;
+            _npcSpeaker = null;
+        }
+        else if(_dialogueInteractive != null)
+        {
+            if (_dialogueInteractive.DialogueCamera != null)
+            {
+                _dialogueInteractive.DialogueCamera.SetActive(false);
+            }
+
+            if(_dialogueInteractive.ObjectiveToGive != null)
+            {
+                GameManager.ObjectiveManager.StartObjective(_dialogueInteractive.ObjectiveToGive);
+            }
+
+            if(_dialogueInteractive.ObjectiveToComplete != null)
+            {
+                GameManager.ObjectiveManager.UpdateObjectiveProgress(_dialogueInteractive.ObjectiveToComplete);
+            }
+
+            playerModel.SetActive(false);
         }
 
-        _npcSpeaker.NPCCamera.SetActive(false);
-        GameManager.InterfaceManager.HUDCanvas.SetActive(true);
+        userDialogueDisplay.SetActive(false);
 
-        _npcSpeaker.DialogueCanvas.SetActive(false);
-        _npcSpeaker.ActiveDialogue.IsActive = false;
-        _npcSpeaker = null;
-        GameManager.InputManager.InputInterface.SetActive(true);
+        _dialogueInteractive = null;
+
         continueDialogueButton.gameObject.SetActive(false);
 
-        Cursor.lockState = CursorLockMode.Confined;
-        Cursor.visible = false;
-        GameManager.StarterAssetsInputs.cursorInputForLook = true;
+        InputManager.EnablePlayerInput(true, true);
+        GameManager.TabletMenu.EnableTabletMenu(true);
 
-        GameManager.FirstPersonController.enabled = true;
+        _dialogueLines = new string[0];
+        _dialogueIndex = 0;
     }
 
     public void SelectOption(int index) //Via Inspector (Button)
     {
-        DialogueInteractive activeDialogue = _npcSpeaker.ActiveDialogue;
-        DialogueThread thread = activeDialogue.DialogueArray[activeDialogue.DialogueThreadIndex];
+        //Find the line which has the selected option
 
-        activeDialogue.DialogueThreadIndex = thread.OptionIndex[index];
+        int newLineIndex = 0;
+
+        for(int i = 0; i < _dialogueLines.Length; i++)
+        {
+            if (_dialogueLines[i] == "/" + _optionArray[index] + "/")
+            {
+                newLineIndex = i + 1;
+                break;
+            }
+        }
+
+        _dialogueIndex = newLineIndex;
+
         optionsInterface.SetActive(false);
         NextDialogue();
+
+        Debug.Log("Option: " + index + " selected");
     }
 
-    private void DisplayDialogueOptions()
+    private void DisplayDialogueOptions(string[] optionArray)
     {
+        Debug.Log("Displaying dialogue options!");
+
         optionsInterface.SetActive(true);
 
         continueDialogueButton.interactable = false;
         userDialogueDisplay.SetActive(false);
 
-        DialogueInteractive activeDialogue = _npcSpeaker.ActiveDialogue;
-        DialogueThread thread = activeDialogue.DialogueArray[activeDialogue.DialogueThreadIndex];
-
         for (int i = 0; i < optionTextArray.Length; i++)
         {
-            optionTextArray[i].text = thread.OptionString[i];
+            bool optionExists = optionArray[i] != "";
+
+            optionTextObjectArray[i].SetActive(optionExists);
+
+            if (optionExists)
+            {
+                optionTextArray[i].text = optionArray[i];
+            }
         }
     }
-}
 
-[System.Serializable]
-public class Dialogue
-{
-    [SerializeField][TextArea(2, 10)] private string dialogueString;
-
-    [SerializeField] private string animationClipTrigger;
-
-    [SerializeField] private string speakerName;
-
-    public string DialogueString
+    public void UpdateVisitorSatisfaction(int value) //Via Unity Event (Dialogue)
     {
-        get { return dialogueString; }
-    }
-
-    public string AnimationClipTrigger
-    {
-        get { return animationClipTrigger; }
-    }
-
-    public string SpeakerName
-    {
-        get { return speakerName; }
-    }
-}
-
-[System.Serializable]
-public class DialogueThread
-{
-    [SerializeField] private Dialogue[] dialogue;
-
-    [SerializeField] private int[] optionIndex;
-
-    [SerializeField] private string[] optionString;
-
-    [SerializeField] private int autoDialogueIndex; //If this value is not zero, the dialogue thread will change to the element at this index.
-
-    private int _dialogueIndex;
-
-    public Dialogue[] Dialogue
-    {
-        get { return dialogue; }
-    }
-
-    public int[] OptionIndex
-    {
-        get { return optionIndex; }
-    }
-
-    public string[] OptionString
-    {
-        get { return optionString; }
-    }
-
-    public int AutoDialogueIndex
-    {
-        get { return autoDialogueIndex; }
-    }
-
-    public int DialogueIndex
-    {
-        get { return _dialogueIndex; }
-        set { _dialogueIndex = value; }
+        if(_npcSpeaker != null)
+        {
+            if(_npcSpeaker.TryGetComponent(out VisitorNPC npc))
+            {
+                npc.UpdateVisitorSatisfaction(npc.VisitorSatisfaction + value);
+            }
+        }
     }
 }
