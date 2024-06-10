@@ -1,0 +1,75 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+public class VisitorNPC : NPCController
+{
+    [Header("Visitor Properties")]
+
+    [SerializeField] private Slider visitorSatisfactionSlider;
+
+    [SerializeField] private Image visitorSatisfactionSliderFill;
+
+    [SerializeField] private float waitingSatisfactionDecrease = 0.24f;
+
+    [SerializeField] private bool isWaiting;
+
+    [Header("Satisfaction Colors")]
+
+    [SerializeField] private Color satisfiedColor;
+
+    [SerializeField] private Color neutralColor;
+
+    [SerializeField] private Color dissatisfiedColor;
+
+    private float _visitorSatisfaction = 100f;
+
+    private bool _isLeaving;
+
+    private NPCMotor _npcMotor;
+
+    public float VisitorSatisfaction
+    {
+        get { return _visitorSatisfaction; }
+    }
+
+    public void UpdateVisitorSatisfaction(float visitorUpdate)
+    {
+        _visitorSatisfaction = visitorUpdate;
+        visitorSatisfactionSlider.value = _visitorSatisfaction;
+
+        if(_visitorSatisfaction >= 60)
+        {
+            visitorSatisfactionSliderFill.color = satisfiedColor;
+        }
+        else if(_visitorSatisfaction >= 30)
+        {
+            visitorSatisfactionSliderFill.color = neutralColor;
+        }
+        else
+        {
+            visitorSatisfactionSliderFill.color = dissatisfiedColor;
+        }
+    }
+
+    private void Awake()
+    {
+        _npcMotor = this.GetComponent<NPCMotor>();
+        visitorSatisfactionSlider.maxValue = 100f;
+        _visitorSatisfaction = 100f;
+    }
+
+    private void Update()
+    {
+        if(!_isLeaving && isWaiting && waitingSatisfactionDecrease > 0)
+        {
+            float newVisitorSatisfaction = _visitorSatisfaction - Time.deltaTime * waitingSatisfactionDecrease;
+            UpdateVisitorSatisfaction(newVisitorSatisfaction);
+
+            if(newVisitorSatisfaction <= 0)
+            {
+                _isLeaving = true;
+                _npcMotor.SetDestination(GameManager.VisitorManager.exitLocation);
+            }
+        }
+    }
+}
