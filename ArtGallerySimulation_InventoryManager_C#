@@ -1,0 +1,78 @@
+using UnityEngine;
+
+public class InventoryManager : MonoBehaviour
+{
+    public bool AddItem(Item item)
+    {
+        bool itemAdded = false;
+
+        InventoryItem[] inventory = GameManager.InterfaceManager.InventoryItemArray;
+
+        foreach(InventoryItem inventoryItem in inventory)
+        {
+            if(inventoryItem.AssignedItem == item)
+            {
+                if(inventoryItem.ItemStackSize < item.MaxStackSize)
+                {
+                    inventoryItem.ItemStackSize++;
+                    itemAdded = true;
+                    break;
+                }
+            }
+        }
+
+        if(!itemAdded)
+        {
+            foreach(InventoryItem inventoryItem in inventory)
+            {
+                if(inventoryItem.AssignedItem == null)
+                {
+                    inventoryItem.AssignedItem = item;
+                    inventoryItem.ItemStackSize = 1;
+                    itemAdded = true;
+                    break;
+                }
+            }
+        }
+
+        if (itemAdded)
+        {
+            if (GameManager.EventManager.onAddItem != null)
+            {
+                GameManager.EventManager.onAddItem.Invoke();
+            }
+        }
+
+        GameManager.InterfaceManager.UpdateInventoryItems();
+
+        return itemAdded;
+    }
+
+    public bool RemoveItem(Item item)
+    {
+        bool itemRemoved = false;
+
+        InventoryItem[] inventory = GameManager.InterfaceManager.InventoryItemArray;
+
+        foreach (InventoryItem inventoryItem in inventory)
+        {
+            if(inventoryItem.AssignedItem == item)
+            {
+                inventoryItem.ItemStackSize--;
+
+                if(inventoryItem.ItemStackSize == 0)
+                {
+                    inventoryItem.AssignedItem = null;
+                }
+
+                itemRemoved = true;
+
+                break;
+            }
+        }
+
+        GameManager.InterfaceManager.UpdateInventoryItems();
+
+        return itemRemoved;
+    }
+}
