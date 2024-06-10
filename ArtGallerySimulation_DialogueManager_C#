@@ -1,0 +1,213 @@
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class DialogueManager : MonoBehaviour
+{
+    [Header("Option Display")]
+
+    [SerializeField] private GameObject optionsInterface;
+
+    [SerializeField] private TextMeshProUGUI[] optionTextArray;
+
+    [Header("User Dialogue Display")]
+
+    [SerializeField] private GameObject userDialogueDisplay;
+
+    [SerializeField] private TextMeshProUGUI userDialogueText;
+
+    [SerializeField] private Button continueDialogueButton;
+
+    private NPCController _npcSpeaker;
+
+    public void StartDialogue(NPCController npcSpeaker)
+    {
+        if (_npcSpeaker == null)
+        {
+            _npcSpeaker = npcSpeaker;
+            _npcSpeaker.DialogueCanvas.SetActive(true);
+
+            _npcSpeaker.NPCCamera.SetActive(true);
+            GameManager.InterfaceManager.HUDCanvas.SetActive(false);
+
+            continueDialogueButton.gameObject.SetActive(true);
+
+            NextDialogue();
+
+            GameManager.InputManager.InputInterface.SetActive(false);
+
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            GameManager.StarterAssetsInputs.cursorInputForLook = false;
+
+            GameManager.FirstPersonController.enabled = false;
+        }
+    }
+
+    public void NextDialogue()
+    {
+        DialogueInteractive activeDialogue = _npcSpeaker.ActiveDialogue;
+
+        DialogueThread thread = activeDialogue.DialogueArray[activeDialogue.DialogueThreadIndex];
+
+        if (thread.DialogueIndex >= thread.Dialogue.Length)
+        {
+            if (thread.OptionIndex.Length == 0)
+            {
+                if (thread.AutoDialogueIndex != 0)
+                {
+                    activeDialogue.DialogueThreadIndex = thread.AutoDialogueIndex;
+                    NextDialogue();
+                }
+                else
+                {
+                    EndDialogue();
+                }
+            }
+            else
+            {
+                DisplayDialogueOptions();
+            }
+
+            return;
+        }
+
+        Dialogue dialogue = thread.Dialogue[thread.DialogueIndex];
+
+        Animator animator = _npcSpeaker.Animator;
+
+        if (dialogue.AnimationClipTrigger != "")
+        {
+            animator.SetTrigger(dialogue.AnimationClipTrigger);
+        }
+
+        if (dialogue.SpeakerName == "User")
+        {
+            userDialogueDisplay.SetActive(true);
+            userDialogueText.text = dialogue.DialogueString;
+        }
+        else
+        {
+            userDialogueDisplay.SetActive(false);
+            _npcSpeaker.DialogueText.text = dialogue.DialogueString;
+        }
+
+        continueDialogueButton.interactable = true;
+
+        thread.DialogueIndex++;
+    }
+
+    public void EndDialogue()
+    {
+        if (_npcSpeaker.ActiveDialogue.ObjectiveToGive != null)
+        {
+            GameManager.ObjectiveManager.StartObjective(_npcSpeaker.ActiveDialogue.ObjectiveToGive);
+        }
+
+        _npcSpeaker.NPCCamera.SetActive(false);
+        GameManager.InterfaceManager.HUDCanvas.SetActive(true);
+
+        _npcSpeaker.DialogueCanvas.SetActive(false);
+        _npcSpeaker.ActiveDialogue.IsActive = false;
+        _npcSpeaker = null;
+        GameManager.InputManager.InputInterface.SetActive(true);
+        continueDialogueButton.gameObject.SetActive(false);
+
+        Cursor.lockState = CursorLockMode.Confined;
+        Cursor.visible = false;
+        GameManager.StarterAssetsInputs.cursorInputForLook = true;
+
+        GameManager.FirstPersonController.enabled = true;
+    }
+
+    public void SelectOption(int index) //Via Inspector (Button)
+    {
+        DialogueInteractive activeDialogue = _npcSpeaker.ActiveDialogue;
+        DialogueThread thread = activeDialogue.DialogueArray[activeDialogue.DialogueThreadIndex];
+
+        activeDialogue.DialogueThreadIndex = thread.OptionIndex[index];
+        optionsInterface.SetActive(false);
+        NextDialogue();
+    }
+
+    private void DisplayDialogueOptions()
+    {
+        optionsInterface.SetActive(true);
+
+        continueDialogueButton.interactable = false;
+        userDialogueDisplay.SetActive(false);
+
+        DialogueInteractive activeDialogue = _npcSpeaker.ActiveDialogue;
+        DialogueThread thread = activeDialogue.DialogueArray[activeDialogue.DialogueThreadIndex];
+
+        for (int i = 0; i < optionTextArray.Length; i++)
+        {
+            optionTextArray[i].text = thread.OptionString[i];
+        }
+    }
+}
+
+[System.Serializable]
+public class Dialogue
+{
+    [SerializeField][TextArea(2, 10)] private string dialogueString;
+
+    [SerializeField] private string animationClipTrigger;
+
+    [SerializeField] private string speakerName;
+
+    public string DialogueString
+    {
+        get { return dialogueString; }
+    }
+
+    public string AnimationClipTrigger
+    {
+        get { return animationClipTrigger; }
+    }
+
+    public string SpeakerName
+    {
+        get { return speakerName; }
+    }
+}
+
+[System.Serializable]
+public class DialogueThread
+{
+    [SerializeField] private Dialogue[] dialogue;
+
+    [SerializeField] private int[] optionIndex;
+
+    [SerializeField] private string[] optionString;
+
+    [SerializeField] private int autoDialogueIndex; //If this value is not zero, the dialogue thread will change to the element at this index.
+
+    private int _dialogueIndex;
+
+    public Dialogue[] Dialogue
+    {
+        get { return dialogue; }
+    }
+
+    public int[] OptionIndex
+    {
+        get { return optionIndex; }
+    }
+
+    public string[] OptionString
+    {
+        get { return optionString; }
+    }
+
+    public int AutoDialogueIndex
+    {
+        get { return autoDialogueIndex; }
+    }
+
+    public int DialogueIndex
+    {
+        get { return _dialogueIndex; }
+        set { _dialogueIndex = value; }
+    }
+}
