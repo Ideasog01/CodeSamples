@@ -1,17 +1,24 @@
+using System.Collections.Generic;
+using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
+using System.Linq;
+using TMPro;
 
 public class VisitorNPC : NPCController
 {
+    #region Variables
+    public enum AIState { Idle, Travelling, Inspecting, Leaving, Objective } //The different AI states that the NPC can enter, triggering specific behaviour with each state.
+
     [Header("Visitor Properties")]
 
     [SerializeField] private Slider visitorSatisfactionSlider;
 
     [SerializeField] private Image visitorSatisfactionSliderFill;
 
-    [SerializeField] private float waitingSatisfactionDecrease = 0.24f;
+    [SerializeField] private float satisfactionDecrease = 0.24f;
 
-    [SerializeField] private bool isWaiting;
+    [SerializeField] private bool isMale;
 
     [Header("Satisfaction Colors")]
 
@@ -23,25 +30,149 @@ public class VisitorNPC : NPCController
 
     private float _visitorSatisfaction = 100f;
 
-    private bool _isLeaving;
+    [Header("Inspect Animations")]
 
-    private NPCMotor _npcMotor;
+    [SerializeField] private string[] inspectTriggerArray;
+
+    [SerializeField] private float minInspectAnimTime;
+
+    [SerializeField] private float maxInspectAnimTime;
+
+    [Header("World Canvas")]
+
+    [SerializeField] private TextMeshProUGUI nameText;
+
+    [SerializeField] private GameObject objectiveActiveIcon;
+
+    private AIState _currentState;
+
+    private ViewTarget _viewTarget;
+    private ViewPosition _viewPosition;
+
+    private bool _inspectAnimSet;
+
+    private float _inspectTimer;
+
+    private List<ViewTarget> _targetPath = new List<ViewTarget>(); //The 'path' that the NPC will take to explore the gallery. The target path is random.
+    private int _targetIndex; //Represents the current element that the AI is targeting.
+
+    private Objective _randomObjective;
+    private float _objectiveActivationTime;
+    private bool _objectiveActive;
+
+    #endregion
+
+    #region Properties
+
+    public TextMeshProUGUI NameText
+    {
+        get { return nameText; }
+    }
+
+    public bool IsMale
+    {
+        get { return isMale; }
+    }
 
     public float VisitorSatisfaction
     {
         get { return _visitorSatisfaction; }
     }
 
-    public void UpdateVisitorSatisfaction(float visitorUpdate)
+    public GameObject ObjectiveActiveIcon
+    {
+        get { return objectiveActiveIcon; }
+    }
+
+    public bool ObjectiveActive
+    {
+        set { _objectiveActive = value; }
+    }
+
+    #endregion
+
+    #region Core
+
+    private void Start()
+    {
+        visitorSatisfactionSlider.maxValue = 100f;
+        _visitorSatisfaction = 100f;
+    }
+
+    private void Update()
+    {
+        if(satisfactionDecrease > 0 && _currentState != AIState.Leaving && _currentState != AIState.Inspecting) //Handles decreasing the satisfaction score overtime.
+        {
+            if (!GameManager.DialogueManager.dialogueActive) //Do not update the satisfaction score if the user is talking to an NPC
+            {
+                float newVisitorSatisfaction = _visitorSatisfaction - Time.deltaTime * satisfactionDecrease;
+                UpdateVisitorSatisfaction(newVisitorSatisfaction); //Updates the display for the satisfaction score (slider)
+
+                if (newVisitorSatisfaction <= 0)
+                {
+                    _currentState = AIState.Leaving; //Sets the visitor to leaving when satisfaction reaches zero
+                }
+            }
+        }
+
+        if (_randomObjective != null)
+        {
+            if (GameManager.GameManagerInstance.TimeElapsed >= _objectiveActivationTime)
+            {
+                _currentState = AIState.Objective;
+            }
+        }
+
+        UpdateStateBehaviour();
+    }
+
+    #endregion
+
+    public void InitialiseVisitor()
+    {
+        _targetIndex = 0;
+        _targetPath.Clear();
+
+        _objectiveActive = false;
+
+        ViewTarget[] viewTargetArray = GameManager.VisitorManager.ViewTargetArray;
+
+        int totalTargetsToView = Random.Range(1, viewTargetArray.Length);
+
+        for(int i = 0; i < totalTargetsToView; i++)
+        {
+            ViewTarget randTarget = viewTargetArray[Random.Range(0, viewTargetArray.Length - 1)];
+
+            if(_targetPath.Contains(randTarget))
+            {
+                i--;
+            }
+            else
+            {
+                _targetPath.Add(randTarget);
+            }
+        }
+
+        _targetPath = _targetPath.OrderBy(v => v.Artefact.PriorityOrder).ToList();
+
+        AssignRandomObjective();
+        UpdateVisitorSatisfaction(100);
+        SetNewTarget();
+    }
+
+    public void UpdateVisitorSatisfaction(float visitorUpdate) //Updates the visitor satisfaction to a new value specified in the parameter
     {
         _visitorSatisfaction = visitorUpdate;
+
+        _visitorSatisfaction = Mathf.Clamp(_visitorSatisfaction, 0, 100);
+
         visitorSatisfactionSlider.value = _visitorSatisfaction;
 
-        if(_visitorSatisfaction >= 60)
+        if (_visitorSatisfaction >= 60)
         {
             visitorSatisfactionSliderFill.color = satisfiedColor;
         }
-        else if(_visitorSatisfaction >= 30)
+        else if (_visitorSatisfaction >= 30)
         {
             visitorSatisfactionSliderFill.color = neutralColor;
         }
@@ -51,25 +182,147 @@ public class VisitorNPC : NPCController
         }
     }
 
-    private void Awake()
+    private void UpdateStateBehaviour()
     {
-        _npcMotor = this.GetComponent<NPCMotor>();
-        visitorSatisfactionSlider.maxValue = 100f;
-        _visitorSatisfaction = 100f;
-    }
-
-    private void Update()
-    {
-        if(!_isLeaving && isWaiting && waitingSatisfactionDecrease > 0)
+        if(_currentState == AIState.Leaving && !NPCMotor.DestinationSet)
         {
-            float newVisitorSatisfaction = _visitorSatisfaction - Time.deltaTime * waitingSatisfactionDecrease;
-            UpdateVisitorSatisfaction(newVisitorSatisfaction);
+            NPCMotor.DestinationSet = false;
+            NPCMotor.SetDestination(GameManager.VisitorManager.exitLocation); //Set new destination to the exit door (NPC will be disabled when reaching the door)
+        }
+        else if(_currentState == AIState.Inspecting) //The visitor has reached the destination!
+        {
+            NPCMotor.LookAtTarget = _viewTarget.transform.position; //Sets the look direction to be towards the target (artefact)
 
-            if(newVisitorSatisfaction <= 0)
+            if(!_inspectAnimSet) //Triggers a random 'inspect' animation every few seconds
             {
-                _isLeaving = true;
-                _npcMotor.SetDestination(GameManager.VisitorManager.exitLocation);
+                StartCoroutine(DelayInspectAnimation(Random.Range(minInspectAnimTime, maxInspectAnimTime), Random.Range(0, inspectTriggerArray.Length))); //Parameters: delay time, animation trigger
+                _inspectAnimSet = true;
+            }
+
+            if(_inspectTimer > 0) //Signifies that the npc is currently inspecting an artefact
+            {
+                _inspectTimer -= Time.deltaTime * 1;
+                UpdateVisitorSatisfaction(_visitorSatisfaction + (_viewTarget.Artefact.SatisfactionPerSecond * Time.deltaTime)); //Increases the satisfaction score every second for viewing the artefact.
+
+                if (_inspectTimer <= 0) //The timer has reached zero, so the visitor can move on to the next artefact to view.
+                {
+                    SetNewTarget();
+                }
             }
         }
+        else if(_currentState == AIState.Travelling) //For travelling to an artefact.
+        {
+            if(_viewPosition == null) //If a view position has not been set yet, set the destination to the current target.
+            {
+                NPCMotor.DestinationSet = false;
+                _viewPosition = _viewTarget.GetAvailablePosition(); //Assigns a random view position that is not currently being used.
+                NPCMotor.SetDestination(_viewPosition.Position);
+            }
+            else
+            {
+                float distanceToTarget = Vector3.Distance(this.transform.position, _viewPosition.Position); //Distance to target position
+
+                if(distanceToTarget < 0.5f) //The visitor has reached the target position
+                {
+                    _inspectTimer = Random.Range(_viewTarget.Artefact.MinViewTime, _viewTarget.Artefact.MaxViewTime); //Random inspect time
+                    GameManager.VisitorManager.totalArtefactsViewed++; //Statistic
+                    _currentState = AIState.Inspecting; //The visitor can now start inspecting the artefact
+                }
+            }
+        }
+        else if(_currentState == AIState.Objective)
+        {
+            if(!_objectiveActive)
+            {
+                NPCMotor.DestinationSet = false;
+                NPCMotor.SetDestination(_randomObjective.ObjectiveStartPosition); //Set new destination to the objective
+
+                float distanceToTarget = Vector3.Distance(this.transform.position, _randomObjective.ObjectiveStartPosition); //Distance to target position
+
+                if (distanceToTarget < 0.25f)
+                {
+                    ActivateObjective();
+                }
+            }
+        }
+    }
+
+    private void SetNewTarget()
+    {
+        if(_viewPosition != null)
+        {
+            _viewPosition.IsClosed = false;
+            _viewPosition = null;
+        }
+
+        if(_targetIndex < _targetPath.Count)
+        {
+            _viewTarget = _targetPath[_targetIndex];
+            _targetIndex++;
+            _currentState = AIState.Travelling;
+        }
+        else
+        {
+            _currentState = AIState.Leaving;
+        }
+    }
+
+    private IEnumerator DelayInspectAnimation(float delayTime, int index)
+    {
+        yield return new WaitForSeconds(delayTime);
+
+        if(_currentState == AIState.Inspecting)
+        {
+            Animator.SetTrigger(inspectTriggerArray[index]);
+            yield return new WaitForSeconds(10);
+        }
+
+        _inspectAnimSet = false;
+    }
+
+    private void AssignRandomObjective()
+    {
+        if(GameManager.ObjectiveManager.PossibleNPCObjectives.Count > 0)
+        {
+            float random = Random.Range(0, 100);
+
+            if(random <= GameManager.ObjectiveManager.ObjectiveFrequency) //Not all NPCs need an objective, so assign randomly according to frequency
+            {
+                Objective randomObjective = GameManager.ObjectiveManager.PossibleNPCObjectives[Random.Range(0, GameManager.ObjectiveManager.PossibleNPCObjectives.Count - 1)];
+                _randomObjective = randomObjective;
+                _objectiveActivationTime = Random.Range(20, (GameManager.GameManagerInstance.MaxElapsedTimeInSeconds / 2) - 60); //Allows objectives to be completed in the given time frame.
+                GameManager.ObjectiveManager.PossibleNPCObjectives.Remove(randomObjective);
+            }
+        }
+        else
+        {
+            Debug.Log("No possible objectives left. NPC objectives need to be set in the ObjectiveManager inspector window.");
+        }
+    }
+
+    private void ActivateObjective()
+    {
+        objectiveActiveIcon.SetActive(true);
+        GameManager.ObjectiveManager.ActiveObjectiveList.Add(_randomObjective);
+        NPCMotor.DestinationSet = false;
+        NPCMotor.LookAtTarget = _randomObjective.ObjectiveStartLookPosition;
+        ActiveDialogue = GameObject.Find(_randomObjective.DialogueObjectName).GetComponent<DialogueInteractive>();
+        ActiveDialogue.IsActive = true;
+        ActiveDialogue.DialogueCamera = NPCCamera;
+        _objectiveActive = true;
+    }
+
+    private IEnumerator DelaySetNewTarget()
+    {
+        yield return new WaitForSeconds(2);
+        _objectiveActive = false;
+        SetNewTarget();
+    }
+
+    public void RemoveObjective()
+    {
+        _randomObjective = null;
+        _currentState = AIState.Idle;
+        StartCoroutine(DelaySetNewTarget());
     }
 }
