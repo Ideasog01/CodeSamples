@@ -1,0 +1,188 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class VisitorManager : MonoBehaviour
+{
+    [Header("Visitor Statistics")]
+
+    public int totalVisitors;
+
+    public int currentVisitors;
+
+    public int earlyLeavers;
+
+    public int totalArtefactsViewed;
+
+    [Header("Other")]
+
+    public float maxVisitorTime;
+
+    public float minVisitorTime;
+
+    public Vector3 exitLocation;
+
+    [SerializeField] private Vector3 spawnLocation;
+
+    [SerializeField] private ViewTarget[] viewTargetArray;
+
+    [SerializeField] private VisitorNPC[] visitorPrefabs;
+
+    [SerializeField] private int maxNpcCount;
+
+    [Header("Visitor Settings")]
+
+    [SerializeField] private string[] maleNameArray;
+
+    [SerializeField] private string[] femaleNameArray;
+
+    private List<VisitorNPC> _activeNpcList = new List<VisitorNPC>();
+
+    private List<VisitorNPC> _inactiveNpcList = new List<VisitorNPC>();
+
+    private float _inactiveSatisfactionTotal;
+
+    private float _totalDeactivatedNPCs;
+
+    private bool _npcSpawning;
+
+    public List<VisitorNPC> ActiveNPCList
+    {
+        get { return _activeNpcList; }
+    }
+
+    private void Awake()
+    {
+        viewTargetArray = FindObjectsByType<ViewTarget>(FindObjectsSortMode.None);
+    }
+
+    private void Update()
+    {
+        if(currentVisitors < maxNpcCount)
+        {
+            if(!_npcSpawning)
+            {
+                StartCoroutine(DelayVisitorSpawn());
+                _npcSpawning = true;
+            }
+        }
+    }
+
+    public ViewTarget[] ViewTargetArray
+    {
+        get { return viewTargetArray; }
+    }
+
+    public ViewTarget GetRandomTarget()
+    {
+        ViewTarget randTarget = null;
+
+        randTarget = viewTargetArray[Random.Range(0, viewTargetArray.Length)];
+
+        return randTarget;
+    }
+
+    public void SpawnVisitor()
+    {
+        VisitorNPC visitorNpc = null;
+
+        foreach(VisitorNPC visitor in _inactiveNpcList)
+        {
+            visitorNpc = visitor;
+            visitor.transform.position = spawnLocation;
+            visitor.gameObject.SetActive(true);
+
+            _activeNpcList.Add(visitorNpc);
+            break;
+        }
+
+        if(visitorNpc == null)
+        {
+            visitorNpc = Instantiate(visitorPrefabs[Random.Range(0, visitorPrefabs.Length)], spawnLocation, Quaternion.identity);
+            _activeNpcList.Add(visitorNpc);
+        }
+        else
+        {
+            _inactiveNpcList.Remove(visitorNpc);
+        }
+
+        if(visitorNpc.IsMale)
+        {
+            visitorNpc.NameText.text = maleNameArray[Random.Range(0, maleNameArray.Length - 1)];
+        }
+        else
+        {
+            visitorNpc.NameText.text = femaleNameArray[Random.Range(0, femaleNameArray.Length - 1)];
+        }
+
+        totalVisitors++;
+        currentVisitors++;
+        visitorNpc.InitialiseVisitor();
+    }
+
+    public void DisableVisitor(VisitorNPC visitorNpc)
+    {
+        if(visitorNpc.VisitorSatisfaction <= 0)
+        {
+            earlyLeavers++;
+        }
+
+        _inactiveSatisfactionTotal += visitorNpc.VisitorSatisfaction;
+        _totalDeactivatedNPCs++;
+
+        currentVisitors--;
+        _activeNpcList.Remove(visitorNpc);
+        _inactiveNpcList.Add(visitorNpc);
+        visitorNpc.gameObject.SetActive(false);
+    }
+
+    private IEnumerator DelayVisitorSpawn()
+    {
+        yield return new WaitForSeconds(5);
+        SpawnVisitor();
+        _npcSpawning = false;
+    }
+
+    public float GetAverageSatisfaction()
+    {
+        if(_activeNpcList.Count == 0)
+        {
+            return 0;
+        }
+
+        float total = _inactiveSatisfactionTotal;
+
+        foreach(VisitorNPC visitor in _activeNpcList)
+        {
+            total += visitor.VisitorSatisfaction;
+        }
+
+        return total / (_activeNpcList.Count + _totalDeactivatedNPCs);
+    }
+
+    public float GetFinalScore()
+    {
+        float finalScore = (GetAverageSatisfaction() / 10) - earlyLeavers; //Returns the final score (out of 10)
+
+        if(finalScore < 0)
+        {
+            finalScore = 0;
+        }
+
+        return finalScore;
+    }
+
+    public void SatisfactionInRadius(Vector3 position, int value)
+    {
+        foreach(VisitorNPC npc in _activeNpcList)
+        {
+            float distanceToPosition = Vector3.Distance(npc.transform.position, position);
+
+            if(distanceToPosition < 5)
+            {
+                npc.UpdateVisitorSatisfaction(npc.VisitorSatisfaction + value);
+                Debug.Log("NPC: " + npc.NameText.text + " recieved satisfaction update");
+            }
+        }
+    }
+}
