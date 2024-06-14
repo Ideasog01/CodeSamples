@@ -1,0 +1,99 @@
+using Firebase.Extensions;
+using Firebase.Storage;
+using System;
+using System.Collections;
+using UnityEngine;
+using UnityEngine.Networking;
+
+public class ModelView : MonoBehaviour
+{
+    /// <summary>
+    /// Script for loading a 3D model from Firebase Cloud Storage.
+    /// </summary>
+
+    public static string ModelFileName;
+
+    [SerializeField] private bool autoLoadModel; //Due to the script working in two scenes, the script needs to know if to automatically load the model when the scene is started. (Only applicable to 3D model view scene not scan scene)
+
+    [SerializeField] private Transform modelSpawnPos;
+
+    private void Start()
+    {
+        if(autoLoadModel)
+        {
+            GetURL(ModelFileName);
+        }
+    }
+
+    public void GetURL(string assetName) //Gets the URL of the asset bundle file. The asset name (file name) specifies which URL to fetch.
+    {
+        GameManager.LoadingScreen.EnableLoadingScreen(true);
+
+        FirebaseStorage storage = FirebaseStorage.DefaultInstance;
+        StorageReference pathReference = storage.GetReference(assetName);
+
+        // Fetch the download URL
+        pathReference.GetDownloadUrlAsync().ContinueWithOnMainThread(task => 
+        {
+            if (!task.IsFaulted && !task.IsCanceled)
+            {
+                Debug.Log("Download URL: " + task.Result);
+                StartCoroutine(DownloadAssetBundle(task.Result)); //Once the URL has been fetched, we can download the asset bundle from Firebase cloud storage.
+            }
+            else
+            {
+                Debug.LogError("Could not find asset bundle URL.");
+            }
+        });
+    }
+
+    private IEnumerator DownloadAssetBundle(Uri url)
+    {
+        GameObject obj = null;
+
+        Debug.Log("Starting to download asset bundle...");
+
+        using(UnityWebRequest www = UnityWebRequestAssetBundle.GetAssetBundle(url))
+        {
+            yield return www.SendWebRequest(); //Only continues when the web request is complete (success/fail)
+            if(www.result == UnityWebRequest.Result.ConnectionError || www.result == UnityWebRequest.Result.ProtocolError)
+            {
+                Debug.Log("Error: Asset Bundle Request Failed! URL: " + url + " Error: " + www.error);
+            }
+            else 
+            {
+                AssetBundle bundle = DownloadHandlerAssetBundle.GetContent(www);
+                obj = bundle.LoadAsset(bundle.GetAllAssetNames()[0]) as GameObject;
+                bundle.Unload(false);
+                Debug.Log("Bundle downloaded!"); //When the asset bundle is successfully downloaded, we then instantiate the object in the virtual world for the user to view.
+                yield return new WaitForEndOfFrame();
+            }
+
+            www.Dispose();
+
+        }
+
+        InstantiateGameObjectAssetBundle(obj);
+    }
+
+    private void InstantiateGameObjectAssetBundle(GameObject obj)
+    {
+        if(obj != null) //If the asset bundle download was sucessful, instantiate the object.
+        {
+            GameObject instantiateObj = Instantiate(obj, modelSpawnPos.position, Quaternion.identity);
+
+            if (!autoLoadModel)
+            {
+                GameManager.MonumentDisplayManager.MonumentAsset = instantiateObj; //Sets the monument asset if this is the scan scene. The monument asset variable is used as a 'buffer' to destroy past objects when a new monument is discovered.
+            }
+
+            GameManager.InteractionManager.LandmarkTransform = instantiateObj.transform; //A reference for object manipulation.
+        }
+        else
+        {
+            Debug.Log("Downloaded object was null!");
+        }
+
+        GameManager.LoadingScreen.EnableLoadingScreen(false); //If the asset bundle was not successful, then the scene will be empty. (This is rare, and is usually caused by the user device/connection)
+    }
+}
