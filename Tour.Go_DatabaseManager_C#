@@ -1,0 +1,141 @@
+using UnityEngine;
+using Firebase.Extensions;
+using System.Collections.Generic;
+using Firebase.Database;
+using System;
+
+public class DatabaseManager : MonoBehaviour
+{
+    /// <summary>
+    /// Class for fetching databases for specific elements including monuments, badges and quizzes.
+    /// </summary>
+
+    public Dictionary<string, object> monumentData;
+
+    public Dictionary<string, object> badgeCollectionData;
+
+    public Dictionary<string, object> badgeData;
+
+    public Dictionary<string, object> quizData;
+
+    //Collection of get functions for reading the database.
+    public void FetchMonumentDatabase(Action<Dictionary<string, object>> onCallback)
+    {
+        FirebaseDatabase.DefaultInstance.GetReference("monuments").GetValueAsync().ContinueWithOnMainThread(task =>
+        {
+            if (task.IsFaulted)
+            {
+                Debug.LogError("Error when trying to retrieve data.");
+            }
+            else if (task.IsCompleted)
+            {
+                DataSnapshot snapshot = task.Result;
+                monumentData = (Dictionary<string, object>)snapshot.Value;
+                onCallback.Invoke(monumentData);
+            }
+        });
+    }
+
+    public void FetchBadgeCollectionDatabase(Action<Dictionary<string, object>> onCallback)
+    {
+        FirebaseDatabase.DefaultInstance.GetReference("badges").GetValueAsync().ContinueWithOnMainThread(task =>
+        {
+            if (task.IsFaulted)
+            {
+                Debug.LogError("Error when trying to retrieve data.");
+            }
+            else if (task.IsCompleted)
+            {
+                DataSnapshot snapshot = task.Result;
+                badgeCollectionData = (Dictionary<string, object>)snapshot.Value;
+                onCallback.Invoke(badgeCollectionData);
+            }
+        });
+    }
+
+    public void FetchBadgeDatabase(string collection, Action<Dictionary<string, object>> onCallback)
+    {
+        FirebaseDatabase.DefaultInstance.GetReference("badges/" + collection).GetValueAsync().ContinueWithOnMainThread(task =>
+        {
+            if (task.IsFaulted)
+            {
+                Debug.LogError("Error when trying to retrieve data.");
+            }
+            else if (task.IsCompleted)
+            {
+                DataSnapshot snapshot = task.Result;
+                badgeData = (Dictionary<string, object>)snapshot.Value;
+                onCallback.Invoke(badgeData);
+            }
+        });
+    }
+
+    public void FetchQuizQuestions(string quizName, Action<Dictionary<string, object>> onCallback)
+    {
+        FirebaseDatabase.DefaultInstance.GetReference("quizzes/" + quizName).GetValueAsync().ContinueWithOnMainThread(task =>
+        {
+            if (task.IsFaulted)
+            {
+                Debug.LogError("Error when trying to retrieve data.");
+            }
+            else if (task.IsCompleted)
+            {
+                DataSnapshot snapshot = task.Result;
+                quizData = (Dictionary<string, object>)snapshot.Value;
+                onCallback.Invoke(quizData);
+            }
+        });
+    }
+
+    public void FetchQuizzes(Action<Dictionary<string, object>> onCallback)
+    {
+        FirebaseDatabase.DefaultInstance.GetReference("quizzes").GetValueAsync().ContinueWithOnMainThread(task =>
+        {
+            if (task.IsFaulted)
+            {
+                Debug.LogError("Error when trying to retrieve data.");
+            }
+            else if (task.IsCompleted)
+            {
+                DataSnapshot snapshot = task.Result;
+                quizData = (Dictionary<string, object>)snapshot.Value;
+                onCallback.Invoke(quizData);
+            }
+        });
+    }
+}
+
+[System.Serializable]
+public class MonumentData
+{
+    /// <summary>
+    /// An essential class for storing and reading monument properties from the online database.
+    /// </summary>
+
+    public string name;
+    public string description;
+    public string rarity;
+    public int experience;
+    public float latitude;
+    public float longitude;
+    public string modelFileName;
+    public string imageUrl;
+    public float distanceThreshold;
+    public string[] quizArray;
+    public string[] badgeArray;
+    
+    public MonumentData(string name, string description, string rarity, int experience, float latitude, float longitude, string modelFileName, string imageUrl, float distanceThreshold, string[] quizArray, string[] badgeArray)
+    {
+        this.name = name;
+        this.description = description;
+        this.rarity = rarity;
+        this.experience = experience;
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.modelFileName = modelFileName;
+        this.imageUrl = imageUrl;
+        this.distanceThreshold = distanceThreshold;
+        this.quizArray = quizArray;
+        this.badgeArray = badgeArray;
+    }
+}
