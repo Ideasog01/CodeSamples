@@ -1,0 +1,264 @@
+using UnityEngine;
+using UnityEngine.UI;
+
+public class InteractionManager : MonoBehaviour
+{
+    /// <summary>
+    /// Enables object manipulation in augmented reality.
+    /// </summary>
+
+    #region Variables
+
+    public static Vector2 TouchPosition; //The current position of the user's input
+    public static Vector2 TouchDelta; //The rate of change from the user's input
+
+    [Header("Object Controls")]
+
+    //For Models
+    [SerializeField] private float movementSpeed;
+    [SerializeField] private float rotationSpeed;
+    [SerializeField] private float scaleSpeed;
+
+    [Header("Object Scale Control")]
+
+    //The min and max values for scaling the model
+    [SerializeField] private float maxScale;
+    [SerializeField] private float minScale;
+
+    [Header("Object Movement Control")]
+
+    //The min and max values for moving the object
+    [SerializeField] private float maxDistanceToCamera;
+    [SerializeField] private float minDistanceToCamera;
+
+    [Header("World References")]
+
+    [SerializeField] private GameObject objectManipulationInterface; //For moving, rotating and scaling the 3D model
+
+    [SerializeField] private LayerMask interactiveLayer; //The layer that all information interactives are assigned
+
+    [SerializeField] private Transform landmarkModelTransform; //The transform that will be changed by the object manipulation tools.
+
+    [Header("Interface Display")]
+
+    [SerializeField] private Image[] toolBackgroundArray; //The different tool icons (move, rotate and scale). The background will change colour to signify that the tool is active.
+
+    [SerializeField] private Color defaultColor;
+    [SerializeField] private Color activeColor;
+
+    [Header("Tutorial Objects")]
+
+    [SerializeField] private GameObject moveToolTutorialObj;
+    [SerializeField] private GameObject rotateToolTutorialObj;
+    [SerializeField] private GameObject scaleToolTutorialObj;
+
+    private UserInputActions _userInputActions;
+
+    private Camera _mainCamera;
+
+    private bool[] _toolActiveArray = new bool[3]; //Signifies whether the tool is active. Only one tool can be active at any given time.
+
+    #endregion
+
+    public Transform LandmarkTransform
+    {
+        set { landmarkModelTransform = value; }
+    }
+
+    #region Core
+
+    private void Awake()
+    {
+        _mainCamera = Camera.main;
+        InitialiseInput();
+    }
+
+    private void Update()
+    {
+        //Update the touch position and delta variables
+        TouchPosition = _userInputActions.ARInteraction.TouchPosition.ReadValue<Vector2>();
+        TouchDelta = _userInputActions.ARInteraction.TouchDelta.ReadValue<Vector2>();
+
+        //If a tool is active, perform the behaviour associated with the tool
+        if(landmarkModelTransform != null && objectManipulationInterface.activeSelf)
+        {
+            if (_toolActiveArray[0])
+            {
+                ObjectMovement();
+            }
+            else if (_toolActiveArray[1])
+            {
+                ObjectRotation();
+            }
+            else if (_toolActiveArray[2])
+            {
+                ObjectScale();
+            }
+        }
+    }
+
+    #endregion
+
+    #region Input & Enable/Disable
+
+    private void InitialiseInput()
+    {
+        _userInputActions = new UserInputActions();
+        _userInputActions.ARInteraction.Select.performed += ctx => RaycastInteractiveCheck();
+    }
+
+    private void OnEnable()
+    {
+        _userInputActions.Enable();
+    }
+
+    private void OnDisable()
+    {
+        _userInputActions.Disable();
+    }
+
+    private void RaycastInteractiveCheck() //For detecting information interactives
+    {
+        RaycastHit hit;
+
+        if (Physics.Raycast(_mainCamera.ScreenPointToRay(Input.mousePosition), out hit, interactiveLayer)) //When interacting with an information sphere, disable the manipulation interface and display the info.
+        {
+            objectManipulationInterface.SetActive(false);
+
+            moveToolTutorialObj.SetActive(false);
+            rotateToolTutorialObj.SetActive(false);
+            scaleToolTutorialObj.SetActive(false);
+
+            GameManager.MonumentInfoDisplay.DisplayInformation(hit.collider.GetComponent<MonumentInformation>());
+            Firebase.Analytics.FirebaseAnalytics.LogEvent("info_interactive");
+        }
+    }
+
+    #endregion
+
+    #region Select/Deselect Object
+
+    public void SelectObject() //Via Inspector (Button)
+    {
+        if (landmarkModelTransform != null)
+        {
+            objectManipulationInterface.SetActive(true);
+        }
+    }
+
+    public void DeselectObject() //Via Inspector (Button)
+    {
+        if (landmarkModelTransform != null)
+        {
+            objectManipulationInterface.SetActive(false);
+        }
+    }
+
+    #endregion
+
+    #region Move/Rotate/Scale
+
+    private void ObjectMovement()
+    {
+        float vertical = TouchDelta.y; //Up is away, down is towards the user
+
+        if(vertical != 0)
+        {
+            if(vertical > 0) //Move away from the user
+            {
+                landmarkModelTransform.position = Vector3.MoveTowards(landmarkModelTransform.position, GameManager.UserCamera.position + (GameManager.UserCamera.forward * maxDistanceToCamera), Time.deltaTime * movementSpeed);
+            }
+            else //Move towards the user
+            {
+                float distanceToCamera = Vector3.Distance(GameManager.UserCamera.position, landmarkModelTransform.position);
+
+                if (distanceToCamera > minDistanceToCamera) //Ensures that the model stays in view of the user
+                {
+                    landmarkModelTransform.position = Vector3.MoveTowards(landmarkModelTransform.position, GameManager.UserCamera.position, Time.deltaTime * movementSpeed);
+                }
+            }
+        }
+    }
+
+    private void ObjectRotation()
+    {
+        float horizontal = TouchDelta.x; //Rotate the model overtime depending on the speed of the user's horizontal input
+        landmarkModelTransform.Rotate(new Vector3(0, -horizontal, 0) * Time.deltaTime * rotationSpeed);
+    }
+
+    private void ObjectScale()
+    {
+        float vertical = TouchDelta.y; //Up increases the size of the model, and down decreases the size of the model.
+
+        Vector3 oldScale = landmarkModelTransform.localScale;
+
+        if(vertical > 0 && oldScale.x < maxScale)
+        {
+            landmarkModelTransform.transform.localScale += new Vector3(1, 1, 1) * Time.deltaTime * scaleSpeed;
+        }
+        else if(vertical < 0 && oldScale.x > minScale)
+        {
+            landmarkModelTransform.transform.localScale -= new Vector3(1, 1, 1) * Time.deltaTime * scaleSpeed;
+        }
+    }
+
+    #endregion
+
+    #region Tool Select
+
+    public void SelectTool(int index) //Via Inspector (Button)
+    {
+        //Display tutorial if this is the first time the tool is being used.
+        UserSettings userSettings = GameManager.GameManagerInstance.userSettings;
+
+        switch(index)
+        {
+            case 0:
+                if (userSettings.moveToolTutorial)
+                {
+                    moveToolTutorialObj.SetActive(userSettings.moveToolTutorial);
+                    rotateToolTutorialObj.SetActive(false);
+                    scaleToolTutorialObj.SetActive(false);
+                    userSettings.moveToolTutorial = false;
+                }
+                break;
+            case 1:
+                if (userSettings.rotateToolTutorial)
+                {
+                    rotateToolTutorialObj.SetActive(userSettings.rotateToolTutorial);
+                    moveToolTutorialObj.SetActive(false);
+                    scaleToolTutorialObj.SetActive(false);
+                    userSettings.rotateToolTutorial = false;
+                }
+                break;
+            case 2:
+                if (userSettings.scaleToolTutorial)
+                {
+                    scaleToolTutorialObj.SetActive(userSettings.scaleToolTutorial);
+                    moveToolTutorialObj.SetActive(false);
+                    rotateToolTutorialObj.SetActive(false);
+                    userSettings.scaleToolTutorial = false;
+                }
+                break;
+        }
+
+        //Selects the tool and assigns a colour based on whether each tool is active/inactive
+
+        for (int i = 0; i < _toolActiveArray.Length; i++)
+        {
+            _toolActiveArray[i] = index == i;
+
+            if(index == i)
+            {
+                toolBackgroundArray[i].color = activeColor;
+            }
+            else
+            {
+                toolBackgroundArray[i].color = defaultColor;
+            }
+        }
+    }
+
+    #endregion
+
+}
