@@ -1,0 +1,256 @@
+using System.Collections.Generic;
+using TMPro;
+using Unity.VisualScripting;
+using UnityEngine;
+
+public class MonumentManager : MonoBehaviour
+{
+    /// <summary>
+    /// Handles creating MonumentData objects, 3D waypoints and handles monument targeting.
+    /// </summary>
+
+    #region Variables
+
+    public static List<MonumentData> MonumentDatabase = new List<MonumentData>(); //Stores all the monument data in the list ready for use by other components.
+
+    [Header("Waypoints")]
+
+    [SerializeField] private List<MonumentWaypoint> waypointList = new List<MonumentWaypoint>(); //All the waypoints currently in the scene.
+
+    [SerializeField] private MonumentWaypoint waypointPrefab;
+
+    [Header("Waypoint Targeting")]
+
+    [SerializeField] private Transform waypointArrow; //Allows the user view the direction of the currently tracked monument.
+
+    [SerializeField] private float waypointArrowRotationSpeed = 45f;
+
+    [SerializeField] private TextMeshProUGUI targetDistanceText;
+
+    [Header("Waypoint Positioning")]
+
+    [SerializeField] private Transform worldOrigin;
+
+    private Transform _targetWaypoint; //The current waypoint the user is targeting. Can be assigned via the nearby monument menu.
+
+    private Vector2 _originalPosition; //The original position of the user. Used in the process of excluding far away monuments. When the user moves by a significant amount, the original position is reassigned.
+
+    private List<MonumentWaypoint> _inactiveWaypointList = new List<MonumentWaypoint>(); //Allows for the re-using of waypoint objects. For example, if a past nearby monument is now far away, the waypoint is disabled and added to the list.
+
+    #endregion
+
+    public List<MonumentWaypoint> WayPointList
+    {
+        get { return waypointList; }
+    }
+
+    #region Core
+
+    private void Start()
+    {
+        ScanNearbyMonuments();
+        GameManager.LoadingScreen.EnableLoadingScreen(true);
+
+        _originalPosition = LocationData.UserLocation;
+
+    }
+
+    private void Update()
+    {
+        foreach (MonumentWaypoint waypoint in waypointList)
+        {
+            waypoint.UpdateDistanceText(GameManager.UserCamera.position);
+        }
+
+        TargetWaypoint();
+        CheckUserLocation();
+    }
+
+    #endregion
+
+    #region Targeting
+
+    private void TargetWaypoint()
+    {
+        if (_targetWaypoint != null) //If the user is targeting a waypoint (via nearby monument menu)
+        {
+
+            //Rotate arrow to show direction of waypoint
+            Vector3 dir = _targetWaypoint.position - GameManager.UserCamera.position;
+            dir.y = 0;
+            Quaternion lookRotation = Quaternion.LookRotation(dir);
+            waypointArrow.rotation = Quaternion.Lerp(waypointArrow.rotation, lookRotation, Time.deltaTime * waypointArrowRotationSpeed);
+
+            //Distance between player and waypoint (world)
+            targetDistanceText.text = Vector3.Distance(GameManager.UserCamera.position, _targetWaypoint.position).ToString("F0") + " Units";
+        }
+    }
+
+    private void CheckUserLocation()
+    {
+        //Finds the distance between two sets of geo-location coordinates (lat and lon).
+        Vector2 originalWorld = MeasurementUtility.GeoConversionWorld(_originalPosition.x, _originalPosition.y);
+        Vector2 currentWorld = MeasurementUtility.GeoConversionWorld(LocationData.UserLocation.x, LocationData.UserLocation.y);
+
+        float distance = Vector2.Distance(originalWorld, currentWorld);
+
+        if (distance > 400) //If the user has moved significantly, then reload the nearby monuments.
+        {
+            SpawnMonumentWaypoints();
+            _originalPosition = LocationData.UserLocation;
+        }
+    }
+
+    public void DisplayWaypointArrow(Transform waypoint)
+    {
+        if(_targetWaypoint == waypoint) //For toggle between targeting
+        {
+            DisableWaypointArrow();
+        }
+        else
+        {
+            waypointArrow.gameObject.SetActive(true);
+            targetDistanceText.gameObject.SetActive(true);
+            GameManager.MonumentDisplayManager.NearbyMonumentDisplay.SetActive(false);
+            _targetWaypoint = waypoint;
+        }
+    }
+
+    public void DisableWaypointArrow()
+    {
+        waypointArrow.gameObject.SetActive(false);
+        targetDistanceText.gameObject.SetActive(false);
+        _targetWaypoint = null;
+    }
+
+    #endregion
+
+    #region Load Monument Waypoints
+
+    public void ScanNearbyMonuments()
+    {
+        MonumentDatabase.Clear(); //Clear the database in the case it was previously fetched (static variable)
+
+        GameManager.DatabaseManager.FetchMonumentDatabase((Dictionary<string, object> database) =>
+        {
+            foreach(object monument in database)
+            {
+                Debug.Log(monument.ToString());
+            }
+
+            //Converts the fetched dictionary into an easily readable database using the MonumentData object.
+            Dictionary<string, object> root = database;
+
+            foreach (KeyValuePair<string, object> value in root)
+            {
+                Dictionary<string, object> monumentData = value.Value as Dictionary<string, object>;
+
+                string description = monumentData["description"].ToString();
+                string rarity = monumentData["rarity"].ToString();
+                int experience = monumentData["experience"].ConvertTo<int>();
+                float latitude = monumentData["latitude"].ConvertTo<float>();
+                float longitude = monumentData["longitude"].ConvertTo<float>();
+                string modelFileName = monumentData["modelFileName"].ConvertTo<string>();
+                string imageUrl = monumentData["imageUrl"].ConvertTo<string>();
+                float distanceThreshold = monumentData["distanceThreshold"].ConvertTo<float>();
+                string[] quizArray = monumentData["quizzes"].ConvertTo<string[]>();
+                string[] badgeArray = monumentData["badges"].ConvertTo<string[]>();
+
+                MonumentData data = new MonumentData(value.Key, description, rarity, experience, latitude, longitude, modelFileName, imageUrl, distanceThreshold, quizArray, badgeArray);
+                MonumentDatabase.Add(data);
+            }
+
+            SpawnMonumentWaypoints();
+
+            GameManager.LoadingScreen.EnableLoadingScreen(false);
+        });
+    }
+
+    private void SpawnMonumentWaypoints()
+    {
+        //Get centre
+        //Spawn waypoints around centre
+
+        Vector3 centre = MeasurementUtility.GeoConversionWorld(LocationData.UserLocation.x, LocationData.UserLocation.y);
+        GameManager.UserOrigin.transform.position = Vector3.zero;
+
+        foreach (MonumentData monument in MonumentDatabase) //Assign a waypoint for each monument (in-range only)
+        {
+            float distance = MeasurementUtility.GetHaversineDistance(LocationData.UserLocation.x, LocationData.UserLocation.y, monument.latitude, monument.longitude); //Finds the distance using geo-location coordinates.
+
+            Debug.Log("Monument: " + monument.name + " Distance: " + distance);
+
+            if(distance < 3000) //Represents the valid range
+            {
+                Vector3 worldPosition = MeasurementUtility.GeoConversionWorld(monument.latitude, monument.longitude);
+
+                Vector3 difference = worldPosition - centre;
+
+                if (WaypointExists(monument.name) == null)
+                {
+                    SpawnWaypoint(monument, difference); //If the waypoint does not exist, then create a new one!
+                }
+            }
+            else //Does not instantiate waypoints for monuments that are far away and not in range.
+            {
+                //Disable the waypoint (if it exists), ready for use later by another
+                MonumentWaypoint waypoint = WaypointExists(monument.name);
+
+                if(waypoint != null)
+                {
+                    _inactiveWaypointList.Add(waypoint);
+                    waypoint.gameObject.SetActive(false);
+                    waypointList.Remove(waypoint);
+                }
+            }
+        }
+    }
+
+    private void SpawnWaypoint(MonumentData monument, Vector3 position)
+    {
+        if(_inactiveWaypointList.Count > 0) //If a waypoint is inactive, use this waypoint and assign the new monument data.
+        {
+            _inactiveWaypointList[0].transform.position = position; //The difference represents the world origin (0, 0, 0) plus the monument world position and minus the user location (world).
+            _inactiveWaypointList[0].gameObject.SetActive(true);
+
+            _inactiveWaypointList[0].gameObject.name = monument.name;
+            _inactiveWaypointList[0].AssignMonument(monument);
+
+            waypointList.Add(_inactiveWaypointList[0]);
+            _inactiveWaypointList.RemoveAt(0);
+        }
+        else //There are no inactive waypoints, so instantiate a new one
+        {
+            MonumentWaypoint waypoint = Instantiate(waypointPrefab, position, Quaternion.identity, worldOrigin);
+            waypoint.gameObject.name = monument.name;
+            waypoint.AssignMonument(monument);
+            waypointList.Add(waypoint);
+        }
+    }
+
+    private MonumentWaypoint WaypointExists(string name)
+    {
+        foreach(MonumentWaypoint waypoint in waypointList) //Only finds active waypoints
+        {
+            if(waypoint.gameObject.name == name)
+            {
+                return waypoint;
+            }
+        }
+
+        return null;
+    }
+
+    #endregion
+
+    public void UnlockMonument(MonumentData monumentData)
+    {
+        List<string> monumentsFound = PlayerProfile.UserMonuments;
+
+        if (!monumentsFound.Contains(monumentData.name)) //Monument was not previously found, so unlock the monument and apply experience
+        {
+            GameManager.SaveManager.AddMonument(monumentData);
+            Debug.Log("New Monument Discovered!");
+        }
+    }
+}
