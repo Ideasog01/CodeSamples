@@ -1,0 +1,328 @@
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+using Firebase.Auth;
+using Firebase;
+using System.Collections;
+using System;
+using Firebase.Extensions;
+
+public class AccountAuthentication : MonoBehaviour
+{
+    /// <summary>
+    /// Allows users to create an account and sign in.
+    /// </summary>
+
+    public static string UserID; //The hidden user identification number for reading and writing data.
+
+    //Signifies if the monument database and user badges have been fetched from the database.
+    public static bool MonumentsLoaded;
+    public static bool BadgesLoaded;
+
+    [Header("Login Screen")]
+
+    [SerializeField] private TMP_InputField emailInput;
+    [SerializeField] private TMP_InputField passwordInput;
+
+    [SerializeField] private GameObject loginErrorMessage; //Displays when the email or password is incorrect.
+
+    [Header("Create Account Screen")]
+
+    [SerializeField] private GameObject[] createAccountScreenArray; //References the different screens for creating an account (enter email, password etc).
+
+    [SerializeField] private TMP_InputField accountEmailInput;
+    [SerializeField] private TMP_InputField accountPasswordInput;
+    [SerializeField] private TMP_InputField confirmPasswordInput;
+    [SerializeField] private TMP_InputField accountUsernameInput;
+
+    [SerializeField] private Button policyCompleteButton;
+    [SerializeField] private Toggle privacyPolicyToggle;
+    [SerializeField] private Toggle termsConditionsToggle;
+
+    [SerializeField] private TextMeshProUGUI[] accountErrorMessageArray; //Displays when a password or email is invalid.
+
+    [Header("Welcome Screen")]
+
+    [SerializeField] private TextMeshProUGUI welcomeUsernameText;
+
+    [Header("Main Menu")]
+
+    [SerializeField] private SideMenuController sideMenuController;
+
+    //Saved for later when creating the account
+    private string _email;
+    private string _password;
+    private string _username;
+
+    private FirebaseUser _user;
+    private DependencyStatus _dependencyStatus;
+
+    private FirebaseAuth _authenticator;
+
+    //Signifies if the monument and badges have been loaded, and the loading screen is no longer active.
+    private bool _dataLoaded;
+
+    public FirebaseAuth Authenticator
+    {
+        get { return _authenticator; }
+    }
+
+    #region Core
+
+    private void Awake()
+    {
+        FirebaseApp.CheckAndFixDependenciesAsync().ContinueWithOnMainThread(task => //Initialises authentication and assigns the auth change event
+        {
+            _dependencyStatus = task.Result;
+
+            if(task.Exception != null)
+            {
+                Debug.LogError(task.Exception);
+                return;
+            }
+
+            if (_dependencyStatus == DependencyStatus.Available)
+            {
+                Debug.Log("Setting up firebase auth.");
+                _authenticator = FirebaseAuth.DefaultInstance;
+
+                if(_authenticator != null)
+                {
+                    _authenticator.StateChanged += HandleAuthStateChange; //Activates when the user signs in/out
+                    Debug.Log("Authenticator not null");
+                }
+            }
+            else
+            {
+                Debug.LogError("Could not resolve firebase dependencies... " + _dependencyStatus);
+            }
+        });
+    }
+
+    private void Update()
+    {
+        if(!_dataLoaded) //Checks when ALL data has been loaded to disable the loading screen.
+        {
+            if (MonumentsLoaded && BadgesLoaded)
+            {
+                AppManager.LoadingScreen.EnableLoadingScreen(false);
+                _dataLoaded = true;
+            }
+        }
+    }
+
+    #endregion
+
+    #region Sign In Control
+
+    private void HandleAuthStateChange(object obj, EventArgs e) //When the authentication state changes, perform the appropriate action
+    {
+        CheckUser();
+    }
+
+    private void CheckUser()
+    {
+        if(_authenticator != null)
+        {
+            if (_authenticator.CurrentUser != null) //If current user is signed in, display the main menu
+            {
+                Debug.Log("Signed In.");
+                _user = _authenticator.CurrentUser;
+                UserID = _user.UserId;
+
+                AppManager.AppManagerInstance.DisplayScreen("MainMenu");
+
+
+                AppManager.LoadingScreen.EnableLoadingScreen(true);
+
+                //Data has not been loaded, so load all data ready for use later
+                if (!MonumentsLoaded || !BadgesLoaded)
+                {
+                    AppManager.DiscoveryArchive.ConvertMonumentDatabase();
+                    AppManager.BadgeManager.ConvertBadgeDatabase();
+
+                    AppManager.SaveManager.GetUnlockedBadges();
+                    AppManager.SaveManager.GetFoundMonuments();
+                }
+            }
+            else //The user has been signed out, so return to the initial start screen
+            {
+                Debug.Log("Signed Out.");
+                _user = null;
+                AppManager.LoadingScreen.EnableLoadingScreen(false);
+                AppManager.AppManagerInstance.DisplayScreen("StartScreen");
+            }
+        }
+        else
+        {
+            Debug.LogError("Authenticator was null!");
+        }
+    }
+
+    // Handle removing subscription and reference to the Auth instance.
+    // Automatically called by a Monobehaviour after Destroy is called on it.
+    private void OnDestroy()
+    {
+        if(_authenticator != null)
+        {
+            //_authenticator.StateChanged -= HandleAuthStateChanged;
+            _authenticator = null;
+        }
+    }
+
+    #endregion
+
+    #region Signing In/Out
+
+    public void EnterLogin() //Via Inspector (Button)
+    {
+        StartCoroutine(SignIn());
+    }
+
+    private IEnumerator SignIn()
+    {
+        //Get the email and password that the user entered
+        string email = emailInput.text;
+        string password = passwordInput.text;
+
+        Debug.Log("Email: " + email + "\nPassword: " + password);
+
+        Credential credential = EmailAuthProvider.GetCredential(email, password);
+
+        var loginTask = _authenticator.SignInWithCredentialAsync(credential);
+
+        yield return new WaitUntil(predicate: () => loginTask.IsCompleted);
+
+        if(loginTask.Exception != null) //The sign in failed, so display an error message.
+        {
+            FirebaseException firebaseException = (FirebaseException)loginTask.Exception.GetBaseException();
+            AuthError authError = (AuthError)firebaseException.ErrorCode;
+            Debug.Log(authError.ToString());
+            loginErrorMessage.SetActive(true);
+        }
+        else //If the sign in was successful, then display the welcome screen.
+        {
+            AppManager.AppManagerInstance.DisplayScreen("WelcomeScreen");
+            welcomeUsernameText.text = "Welcome " + _user.DisplayName;
+            AppManager.AppManagerInstance.TriggerAnimation("WelcomeScreen");
+        }
+    }
+
+    public void SignOut() //Via Inspector (Button)
+    {
+        sideMenuController.ActivateSideMenu(false);
+        _authenticator.SignOut();
+    }
+
+    #endregion
+
+    #region CreateAccount
+
+    public void EnterEmail()
+    {
+        _email = accountEmailInput.text;
+
+        if(_email.Length > 5 && _email.Contains("@")) //The email must be more than 4 characters and contain an @ symbol
+        {
+            UpdateCreateAccountScreen("Password");
+            accountErrorMessageArray[0].gameObject.SetActive(false);
+        }
+        else
+        {
+            accountErrorMessageArray[0].gameObject.SetActive(true);
+        }
+    }
+
+    public void EnterPassword()
+    {
+        _password = accountPasswordInput.text;
+        if(_password.Length >= 6 && confirmPasswordInput.text == _password) //The passowrd must be more than 5 characters and match the confirmation.
+        {
+            UpdateCreateAccountScreen("Username");
+            accountErrorMessageArray[1].gameObject.SetActive(false);
+        }
+        else
+        {
+            accountErrorMessageArray[1].gameObject.SetActive(true);
+
+            if(_password.Length < 6)
+            {
+                accountErrorMessageArray[1].text = "Password must be at least 6 characters in length.\nPlease try again!";
+            }
+            else if(confirmPasswordInput.text != _password)
+            {
+                accountErrorMessageArray[1].text = "Passwords do not match!\nPlease try again!";
+            }
+        }
+    }
+
+    public void EnterUsername()
+    {
+        _username = accountUsernameInput.text;
+        if (_username.Length >= 3) //Users names must be at least 3 characters
+        {
+            StartCoroutine(CreateAccount());
+            accountErrorMessageArray[2].gameObject.SetActive(false);
+        }
+        else
+        {
+            accountErrorMessageArray[2].gameObject.SetActive(true);
+            accountErrorMessageArray[2].text = "Username is too short and must contain at least 3 characters.";
+        }
+    }
+
+    public void UpdateCreateAccountScreen(string screenName) //Displays the different screens for creating an account specified by the string parameter.
+    {
+        foreach (GameObject screen in createAccountScreenArray)
+        {
+            screen.SetActive(screenName == screen.name);
+        }
+    }
+
+    #region Policies
+
+    public void AcceptPolicies() //Via Inspector (Button)
+    {
+        UpdateCreateAccountScreen("Email");
+    }
+
+    public void UpdateAcceptPolicy()
+    {
+        policyCompleteButton.interactable = privacyPolicyToggle.isOn && termsConditionsToggle.isOn;
+    }
+
+    #endregion
+
+    private IEnumerator CreateAccount()
+    {
+        var registerTask = _authenticator.CreateUserWithEmailAndPasswordAsync(_email, _password);
+
+        yield return new WaitUntil(predicate: () => registerTask.IsCompleted);
+
+        if(registerTask.Exception != null)
+        {
+            FirebaseException firebaseException = (FirebaseException)registerTask.Exception.GetBaseException();
+            AuthError authError = (AuthError)firebaseException.ErrorCode;
+            Debug.Log(authError.ToString());
+            AppManager.AppManagerInstance.DisplayScreen("StartScreen");
+        }
+        else
+        {
+            UserProfile userProfile = new UserProfile();
+            userProfile.DisplayName = _username;
+            var updateUserTask = _user.UpdateUserProfileAsync(userProfile);
+
+            yield return new WaitUntil(predicate: () => updateUserTask.IsCompleted);
+
+            welcomeUsernameText.text = "Welcome " + _user.DisplayName;
+            AppManager.AppManagerInstance.TriggerAnimation("WelcomeScreen");
+
+            AppManager.SaveManager.SaveData(_user.UserId, 0, 0, _user.DisplayName);
+
+            AppManager.AppManagerInstance.DisplayScreen("MainMenu");
+            AppManager.LoadingScreen.EnableLoadingScreen(false);
+        }
+    }
+
+    #endregion
+}
